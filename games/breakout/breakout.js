@@ -63,9 +63,10 @@
   var PADDLE_MIN_SCALE = 0.5;    // ...down to half size (reached around level 9)
   var AI_LAUNCH_DELAY = 0.6;     // AI mode: beat on the paddle before it serves
   var AI_RESTART_DELAY = 1.6;    // AI mode: hold on game-over before it replays
-  var AI_PADDLE_SPEED = 1.8;     // AI paddle max travel, in screen widths / second
-  var AI_FALLBACK_FRAMES = 150;  // AI: frames with no brick broken before it sweeps the ball out of a stuck orbit
-  var AI_GIVEUP_FRAMES = 450;    // AI: ...and before it gives up and drops the ball to reset (can't lock)
+  var AI_PADDLE_SPEED = 3.2;     // AI paddle max travel, in screen widths / second (keeps up with the lively ball)
+  var AI_FALLBACK_FRAMES = 110;  // AI: frames with no brick broken before it steers the ball back to the bricks
+  var AI_GIVEUP_FRAMES = 550;    // AI: ...and (rare last resort) before it drops the ball to reset (can't lock)
+  var AI_MIN_REL = 0.24;         // AI: minimum paddle contact offset — never returns the ball near-vertical
 
   NG.ready(function () {
     var canvas = document.getElementById('game');
@@ -128,12 +129,14 @@
       // Brick wall geometry. Columns come from a target brick width relative to
       // the short side, so a wide screen gets more (thinner-looking) columns and
       // a tall one fewer; rows fill ~40% of the height, capped to stay classic.
-      var sideGap = W * 0.02;
-      fieldX = sideGap;
-      var fieldW = W - 2 * sideGap;
+      // Like the original, leave a ~half-brick GAP between the outermost bricks
+      // and each side wall, so the ball can be shot up the side into the space
+      // above the wall: size the columns so cols bricks + a half-brick margin on
+      // each side fill the width, i.e. W = (cols + 1) * cellW.
       var targetCellW = unit / 8.5;
-      var newCols = clamp(Math.round(fieldW / targetCellW), 6, 16);
-      cellW = fieldW / newCols;
+      var newCols = clamp(Math.round(W / targetCellW) - 1, 6, 16);
+      cellW = W / (newCols + 1);
+      fieldX = cellW * 0.5;                 // half-brick gap to the left wall (and right, by symmetry)
       cellH = cellW * 0.46;                 // classic wide-brick aspect
       fieldTop = H * 0.085;                 // HUD band above the wall
       var newRows = clamp(Math.round((H * 0.40) / cellH), 4, 9);
@@ -288,18 +291,18 @@
       }
       return best;
     }
-    // The smart move: TUNNEL up an edge. Rather than spreading fire across the wall,
-    // the AI drills a channel up one edge, then fires the ball through that open
-    // channel so it pops out ABOVE the wall and bounces along the tops, clearing a
-    // chunk hands-off — the classic Breakout strategy. Targeting is layered so it's
-    // fast AND can never lock:
-    //   1. drill the edge column open;
-    //   2. once open, shoot the ball up the channel (leaning at the brick mass);
-    //   3. past the half-cleared mark, switch to efficient nearest-brick clearing
-    //      (and the same for the last row of stragglers);
-    //   4. if nothing breaks for a while, the ball is usually caught in an orbit
-    //      hugging a side wall — pull toward the brick centroid and perturb to
-    //      shake it loose;
+    // The smart move: BANK off a side wall. Rather than picking bricks off one at a
+    // time, the AI sends the ball up the side gap on one edge so it ricochets off
+    // the wall, rises into the space above the bricks, and rakes the tops — the
+    // classic Breakout tactic, and far faster on a full wall. Targeting is layered
+    // so it's effective AND can never lock or idle:
+    //   1. early on, bank the ball up the chosen side to work the top;
+    //   2. past the half-cleared mark (and for the last stragglers) switch to
+    //      efficient nearest-brick clearing;
+    //   3. a global minimum return angle bans dead-vertical bouncing — the ball
+    //      always plays forward;
+    //   4. if nothing breaks for a while (ball loose in a cleared pocket), aim
+    //      straight at the nearest brick and perturb to break any stable orbit;
     //   5. and if even that fails, give up and let the ball drop: a fresh serve
     //      always breaks the orbit, so an infinite lock is impossible.
     function aiMovePaddle(edt) {
@@ -321,41 +324,30 @@
           return;
         }
 
-        // gap = columns already cleared inward from the chosen edge; aliveCol = the
-        // frontmost column on that side that still has bricks (the drilling front).
-        var gap = 0;
-        if (aiEdge < 0) { while (gap < cols && counts[gap] === 0) gap++; }
-        else { while (gap < cols && counts[cols - 1 - gap] === 0) gap++; }
-        var aliveCol = aiEdge < 0 ? gap : cols - 1 - gap;
-        var inward = aiEdge < 0 ? 1 : -1;        // +x is "inward" when tunnelling the left edge
         var rel;
-        if (bricksLeft <= cols || bricksLeft <= fullWall * 0.55 || aliveCol < 0 || aliveCol >= cols) {
-          // Once the channel is open and the top-play has been shown (under ~half the
-          // wall left), stop tunnelling and clear efficiently by nearest brick — the
-          // ball still pops through the open channel on its own. Keeps wide walls
-          // from dragging on. Final stragglers (≤ a row) use the same precise aim.
+        if (bricksLeft <= cols || bricksLeft <= fullWall * 0.5) {
+          // Second half / final stragglers: clear efficiently by nearest brick.
           rel = clamp((nearestBrickX(px) - px) / (W * 0.5), -0.6, 0.6);
         } else if (aiNoHit > AI_FALLBACK_FRAMES) {
-          // Stuck with nothing breaking — almost always the ball caught in a stable
-          // orbit hugging a side wall, out of reach of the bricks. Aiming at a far
-          // column can't fix it (the paddle can't get outside the ball near a wall),
-          // so pull toward the centre of the remaining bricks AND perturb the angle
-          // bounce to bounce, which walks the ball off the wall and scatters it out
-          // of the orbit, back into the bricks.
-          rel = clamp((brickCentroidX() - px) / (W * 0.5), -0.7, 0.7) + 0.4 * Math.sin(Math.floor(aiNoHit / 40) * 1.9);
+          // Loose in a cleared pocket — aim straight at the nearest brick (with a
+          // little perturbation) to get back on target and break any stable orbit.
+          rel = clamp((nearestBrickX(px) - px) / (W * 0.5), -0.7, 0.7) + 0.25 * Math.sin(Math.floor(aiNoHit / 35) * 2.3);
           rel = clamp(rel, -0.85, 0.85);
-        } else if (gap < 1) {
-          var ex = fieldX + (aliveCol + 0.5) * cellW;                         // no channel yet — drill the edge open
-          rel = clamp((ex - px) / (W * 0.5), -0.85, 0.85);
-          if (Math.abs(rel) < 0.08) rel = inward * 0.08;                      // never dead-vertical
         } else {
-          // Channel open — fire the ball up through it (a slight INWARD lean aims it
-          // at the brick mass rather than the side wall) so it pops out ABOVE the
-          // wall and bounces along the tops, clearing a chunk hands-off. The gap
-          // widens and sweeps inward as that side falls.
-          var gapX = aiEdge < 0 ? fieldX + (gap * 0.5) * cellW : fieldX + (cols - gap * 0.5) * cellW;
-          rel = clamp((gapX - px) / (W * 0.5) + inward * 0.12, -0.85, 0.85);
+          // BANK OFF THE SIDE WALL: aim the ball up the side gap on the chosen edge
+          // so it ricochets off the wall, rises into the space above the bricks, and
+          // rakes the tops — using the wall clears far faster than picking bricks off
+          // one at a time. (The half-brick side gap gives it a clear lane up.) When
+          // the ball is already on that side, the dead-vertical guard below turns it
+          // back up-and-across into the bricks, so the two alternate into a rake.
+          var sideX = aiEdge < 0 ? ball.r * 1.5 : W - ball.r * 1.5;
+          rel = clamp((sideX - px) / (W * 0.5), -0.85, 0.85);
         }
+        // Ban dead-vertical returns: a near-zero offset sends the ball straight up,
+        // and it just bounces up and down wasting time. Force at least a minimum
+        // sideways angle, pointed at the bulk of the remaining bricks, so the AI
+        // always plays forward.
+        if (Math.abs(rel) < AI_MIN_REL) rel = (brickCentroidX() >= px ? 1 : -1) * AI_MIN_REL;
         target = px - rel * half;
       } else {
         target = ball.x;                         // rising — stay under it for the return
