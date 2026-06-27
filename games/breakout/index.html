@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>Breakout — Nostalgic Arcade</title>
+  <style>
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: #000;
+      overflow: hidden;
+      overscroll-behavior: none;
+      touch-action: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    /* The canvas fills the viewport; the brick field + paddle are laid out
+       inside it (paddle always at the bottom, whatever the orientation). */
+    #game {
+      display: block;
+      background: #000;
+    }
+    #finish {
+      position: fixed;
+      top: max(10px, env(safe-area-inset-top));
+      left: 50%;
+      transform: translateX(-50%);
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px 22px;
+      color: #4dff88;
+      font: bold 14px "Courier New", monospace;
+      letter-spacing: 0.18em;
+      text-decoration: none;
+      border: 1px solid #1d5e38;
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.45);
+      z-index: 10;
+      transition: opacity 0.25s ease;
+    }
+    #finish:active { background: rgba(77, 255, 136, 0.15); }
+    /* NG.setPlaying(true) adds this class during active play — hide the button
+       so it can't be tapped by accident mid-rally. */
+    body.ng-playing #finish { opacity: 0; pointer-events: none; }
+  </style>
+</head>
+<body>
+  <a id="finish" href="../../index.html">FINISH</a>
+  <canvas id="game"></canvas>
+
+  <script src="../../shared/ng.js"></script>
+  <script src="../../shared/touch.js"></script>
+  <script src="breakout.js"></script>
+  <script>
+    // Leave the game via the FINISH button or an ESC / BACK / HOME key.
+    NG.enableFinish({ button: '#finish' });
+  </script>
+</body>
+</html>
