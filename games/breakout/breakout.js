@@ -21,6 +21,13 @@
  * sends it straight up, the edges kick it out steeply — so the player aims by
  * positioning, exactly like the original. The ball also speeds up a touch on
  * paddle hits and when it breaks into the higher (red / amber) rows.
+ *
+ * Controls beyond drag-to-move / tap-to-launch:
+ *   - PAUSE: the ‖ chip in the HUD, or SPACE on a keyboard (tap anywhere to resume).
+ *   - SPEED: +/- scale the whole simulation (a 0.25x–4x debug/▸ slow-mo knob).
+ *   - AI: the "AI" chip (or the I key) hands the paddle to the computer — a
+ *     hands-free autoplay that serves, clears walls, and replays on its own.
+ * Cleared walls roll straight into the next (faster) one automatically.
  */
 (function () {
   'use strict';
@@ -49,6 +56,12 @@
   var MAX_SPEED_FRAC = 1.08;     // ceiling a rally can ramp the ball up to
   var PADDLE_SPEEDUP = 1.025;    // gentle speed-up on every paddle hit
   var BRICK_SPEEDUP = 1.04;      // extra speed-up when a hard (red/amber) brick breaks
+  var WIN_BANNER = 1.3;          // seconds the "wall cleared" banner holds before auto-advancing
+  var SPEED_MUL_MIN = 0.25;      // +/- keys scale the whole simulation within these bounds
+  var SPEED_MUL_MAX = 4;
+  var AI_LAUNCH_DELAY = 0.6;     // AI mode: beat on the paddle before it serves
+  var AI_RESTART_DELAY = 1.6;    // AI mode: hold on game-over before it replays
+  var AI_PADDLE_SPEED = 1.8;     // AI paddle max travel, in screen widths / second
 
   NG.ready(function () {
     var canvas = document.getElementById('game');
@@ -73,6 +86,11 @@
     var trail = [];                   // recent ball positions, for the comet tail
     var clock = 0;                    // wall clock, for prompt pulsing
     var touch = null;
+    var paused = false;               // SPACE / ‖ chip: freeze play (state stays 'playing')
+    var aiOn = false;                 // AI chip / I key: computer drives the paddle
+    var speedMul = 1;                 // +/- debug time scale
+    var wonTimer = 0;                 // counts up during the 'won' banner, then auto-advances
+    var aiTimer = 0;                  // AI dwell before it serves / replays
 
     function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
     function baseSpeed() { return clamp(SPEED_FRAC0 + SPEED_STEP * (level - 1), 0, MAX_SPEED_FRAC) * H; }
@@ -191,7 +209,81 @@
       if (lives <= 0) { state = 'over'; NG.setPlaying(false); }
       else resetBallReady();
     }
-    function winLevel() { state = 'won'; NG.setPlaying(false); }
+    function winLevel() { state = 'won'; wonTimer = 0; NG.setPlaying(false); }
+    function advanceWin() { nextLevel(); launch(); }   // roll straight into the next wall
+
+    // ---- pause -------------------------------------------------------------
+    function setPaused(p) {
+      if (state !== 'playing' && !paused) return;   // only meaningful during play
+      paused = p;
+      NG.setPlaying(!p);             // bring the FINISH button back while paused
+    }
+    function togglePause() { if (state === 'playing' || paused) setPaused(!paused); }
+
+    // ---- AI autoplay -------------------------------------------------------
+    // A hands-free "watch it play" / take-over mode. The paddle is driven by a
+    // predict-and-intercept controller (where will the ball cross the paddle's
+    // line, folding side-wall bounces?) that nudges the contact point so the
+    // rebound heads back toward whatever bricks remain — so it clears walls
+    // instead of drilling one column. With AI on it also serves, advances, and
+    // replays on its own, looping as an attract demo until you tap it off.
+    function predictPaddleX() {
+      if (ball.vy <= 0) return ball.x;
+      var plane = paddle.y - ball.r;
+      var time = (plane - ball.y) / ball.vy;
+      if (time <= 0) return ball.x;
+      var lo = ball.r, hi = W - ball.r, span = hi - lo;
+      if (span <= 0) return ball.x;
+      var x = (ball.x + ball.vx * time - lo) % (2 * span);
+      if (x < 0) x += 2 * span;
+      if (x > span) x = 2 * span - x;          // reflect off the side walls
+      return lo + x;
+    }
+    // The standing brick whose column sits closest to x. Aiming the rebound at
+    // this (rather than the whole wall's centroid) avoids a vertical lock: on a
+    // symmetric wall the centroid stays centred, so a centred ball would drill
+    // one column then bounce straight up & down forever — but the NEAREST brick
+    // shifts off to a side as soon as a column empties, so the paddle offsets
+    // and steers the ball back into the wall.
+    function nearestBrickX(x) {
+      var best = x, bestD = Infinity;
+      for (var i = 0; i < bricks.length; i++) {
+        if (!bricks[i].alive) continue;
+        var bx = fieldX + (bricks[i].col + 0.5) * cellW;
+        var d = Math.abs(bx - x);
+        if (d < bestD) { bestD = d; best = bx; }
+      }
+      return best;
+    }
+    function aiMovePaddle(edt) {
+      var half = paddle.w / 2, target;
+      if (ball.vy > 0) {                         // descending — head to the intercept...
+        var px = predictPaddleX();
+        var rel = clamp((nearestBrickX(px) - px) / (W * 0.5), -0.6, 0.6);
+        target = px - rel * half;                // ...offset so the rebound aims at the bricks
+      } else {
+        target = ball.x;                         // rising — just stay under it
+      }
+      target = clamp(target, half, W - half);
+      var maxV = W * AI_PADDLE_SPEED * edt;
+      paddle.cx = clamp(paddle.cx + clamp(target - paddle.cx, -maxV, maxV), half, W - half);
+    }
+    function aiAuto(dt) {
+      if (state === 'ready') { aiTimer += dt; if (aiTimer >= AI_LAUNCH_DELAY) { aiTimer = 0; launch(); } }
+      else if (state === 'over') { aiTimer += dt; if (aiTimer >= AI_RESTART_DELAY) { aiTimer = 0; newGame(); } }
+      else aiTimer = 0;
+    }
+
+    // ---- HUD chips (pause + AI toggle, both tappable) ----------------------
+    function inRect(x, y, r) { return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h; }
+    function chipRects() {
+      var fs = Math.max(unit * 0.03, 11);
+      var s = fs * 1.7, y = fieldTop * 0.5 - s / 2;
+      return {
+        pause: { x: W * 0.02, y: y, w: s, h: s },
+        ai: { x: W * 0.72, y: y, w: s * 1.5, h: s },
+      };
+    }
 
     // ---- input -------------------------------------------------------------
     // The paddle tracks the active touch's x (absolute follow, like Pong's
@@ -279,19 +371,27 @@
 
     function update(dt) {
       clock += dt;
-      applyPaddleInput();
-      if (state === 'ready') {              // ball rides the paddle until launch
+      if (state === 'won') { wonTimer += dt; if (wonTimer >= WIN_BANNER) advanceWin(); }
+      if (aiOn) aiAuto(dt);
+
+      var edt = dt * speedMul;             // +/- keys scale the whole simulation
+      if (!paused) {
+        if (aiOn && (state === 'playing' || state === 'ready')) aiMovePaddle(edt);
+        else if (!aiOn) applyPaddleInput();
+      }
+
+      if (state === 'ready') {             // ball rides the paddle until launch
         ball.x = paddle.cx;
         ball.y = paddle.y - ball.r - 1;
         return;
       }
-      if (state !== 'playing') return;
+      if (state !== 'playing' || paused) return;
 
       // Sub-step so a fast ball can't tunnel through a thin brick or the paddle.
-      var travel = Math.hypot(ball.vx, ball.vy) * dt;
+      var travel = Math.hypot(ball.vx, ball.vy) * edt;
       var maxStep = Math.max(2, Math.min(ball.r, cellH * 0.5));
       var steps = Math.max(1, Math.ceil(travel / maxStep));
-      var sdt = dt / steps;
+      var sdt = edt / steps;
       for (var s = 0; s < steps && state === 'playing'; s++) stepBall(sdt);
 
       trail.push({ x: ball.x, y: ball.y });
@@ -319,18 +419,54 @@
       ctx.globalAlpha = 1;
     }
 
+    function drawChip(r, color, on) {
+      ctx.lineWidth = Math.max(1.5, unit * 0.003);
+      ctx.strokeStyle = color;
+      ctx.fillStyle = on ? color : 'rgba(255,255,255,0.03)';
+      rrect(r.x, r.y, r.w, r.h, Math.min(r.w, r.h) * 0.28);
+      ctx.fill();
+      ctx.shadowColor = color;
+      ctx.shadowBlur = on ? 10 : 0;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    }
+
     function drawHud() {
       ctx.shadowBlur = 0;
       ctx.textBaseline = 'middle';
       var fs = Math.max(unit * 0.03, 11);
-      ctx.font = 'bold ' + fs.toFixed(0) + 'px "Courier New", monospace';
       var midY = fieldTop * 0.5;
-      // score (left) and level (centre)
+      var ch = chipRects();
+
+      // pause / resume chip — two bars normally, a ▸ play triangle while paused
+      drawChip(ch.pause, paused ? FG : MUTED, paused);
+      ctx.fillStyle = paused ? '#06120b' : MUTED;
+      if (paused) {
+        var trx = ch.pause.x + ch.pause.w * 0.40, trya = ch.pause.y + ch.pause.h * 0.30, trh = ch.pause.h * 0.40;
+        ctx.beginPath();
+        ctx.moveTo(trx, trya); ctx.lineTo(trx, trya + trh); ctx.lineTo(trx + trh * 0.9, trya + trh / 2);
+        ctx.closePath(); ctx.fill();
+      } else {
+        var bw = ch.pause.w * 0.12, bh = ch.pause.h * 0.42, by = ch.pause.y + ch.pause.h * 0.29, bx = ch.pause.x + ch.pause.w * 0.34;
+        ctx.fillRect(bx, by, bw, bh);
+        ctx.fillRect(bx + bw * 2.2, by, bw, bh);
+      }
+
+      // score (after the pause chip) and level / speed (centre)
+      ctx.font = 'bold ' + fs.toFixed(0) + 'px "Courier New", monospace';
       ctx.fillStyle = MUTED;
       ctx.textAlign = 'left';
-      ctx.fillText('SCORE ' + String(score).padStart(5, '0'), W * 0.03, midY);
+      ctx.fillText('SCORE ' + String(score).padStart(5, '0'), ch.pause.x + ch.pause.w + fs * 0.6, midY);
       ctx.textAlign = 'center';
-      ctx.fillText('LEVEL ' + level, W / 2, midY);
+      ctx.fillText('LEVEL ' + level + (speedMul !== 1 ? '   x' + speedMul.toFixed(2) : ''), W / 2, midY);
+
+      // AI toggle chip
+      drawChip(ch.ai, aiOn ? FG : MUTED, aiOn);
+      ctx.fillStyle = aiOn ? '#06120b' : MUTED;
+      ctx.textAlign = 'center';
+      ctx.font = 'bold ' + (ch.ai.h * 0.5).toFixed(0) + 'px "Courier New", monospace';
+      ctx.fillText('AI', ch.ai.x + ch.ai.w / 2, ch.ai.y + ch.ai.h / 2 + 1);
+
       // lives as little balls (right)
       var lr = fs * 0.32, gap = fs * 0.95, rightX = W * 0.97;
       ctx.fillStyle = FG;
@@ -423,22 +559,26 @@
 
       var pulse = 0.55 + 0.45 * Math.abs(Math.sin(clock * 2.2));
       var big = unit * 0.06, small = unit * 0.038;
-      if (state === 'ready') {
+      if (paused) {
         drawCenter([
-          { text: 'TAP TO LAUNCH', size: big, color: FG, glow: true, alpha: pulse },
-          { text: 'DRAG TO MOVE', size: small, color: MUTED },
+          { text: 'PAUSED', size: big, color: FG, glow: true },
+          { text: 'TAP OR SPACE TO RESUME', size: small, color: INK, alpha: pulse },
+        ]);
+      } else if (state === 'ready') {
+        drawCenter([
+          { text: aiOn ? 'AI SERVING…' : 'TAP TO LAUNCH', size: big, color: FG, glow: true, alpha: pulse },
+          { text: aiOn ? 'TAP  AI  TO TAKE OVER' : 'DRAG TO MOVE', size: small, color: MUTED },
         ]);
       } else if (state === 'won') {
         drawCenter([
           { text: 'WALL CLEARED', size: big, color: FG, glow: true },
-          { text: 'SCORE ' + score, size: small, color: INK },
-          { text: 'TAP FOR NEXT WALL', size: small, color: INK, alpha: pulse },
+          { text: 'NEXT WALL…', size: small, color: INK, alpha: pulse },
         ]);
       } else if (state === 'over') {
         drawCenter([
           { text: 'GAME OVER', size: big, color: '#ff5d6c', glow: true },
           { text: 'SCORE ' + score, size: small, color: INK },
-          { text: 'TAP TO PLAY AGAIN', size: small, color: INK, alpha: pulse },
+          { text: aiOn ? 'AI RESTARTING…' : 'TAP TO PLAY AGAIN', size: small, color: INK, alpha: pulse },
         ]);
       }
       ctx.shadowBlur = 0;
@@ -450,27 +590,45 @@
     function tap() {
       if (state === 'ready') launch();
       else if (state === 'over') newGame();
-      else if (state === 'won') nextLevel();
+      else if (state === 'won') advanceWin();    // skip the banner, go now
     }
     touch = NG.createTouch(canvas, {
-      onDown: function (pt) { applyPaddleInput(); tap(); },
+      onDown: function (pt) {
+        var ch = chipRects();
+        if (inRect(pt.x, pt.y, ch.ai)) { aiOn = !aiOn; aiTimer = 0; return; }   // toggle AI
+        if (inRect(pt.x, pt.y, ch.pause)) { togglePause(); return; }
+        if (paused) { setPaused(false); return; }   // tap anywhere resumes
+        if (aiOn) return;                           // AI is driving — ignore field taps
+        applyPaddleInput();
+        tap();
+      },
     });
 
     // Desktop convenience: move the mouse to slide the paddle without holding a
     // button (touch never needs this — a finger is always "down" while dragging).
     window.addEventListener('mousemove', function (ev) {
-      if (touch.count) return;             // a real pointer drag already owns it
+      if (aiOn || paused || touch.count) return;   // AI / pause own the paddle, or a drag does
       var rect = canvas.getBoundingClientRect();
       paddle.cx = clamp(ev.clientX - rect.left, paddle.w / 2, W - paddle.w / 2);
     });
 
-    // Keyboard: pure desktop-development convenience (the game never requires it).
+    // Keyboard: a desktop-development convenience (the game never requires it).
+    // SPACE pauses (or resumes); +/- scale the sim speed; I toggles AI; arrows /
+    // WASD nudge the paddle and ENTER / UP serve — all when the AI isn't driving.
     window.addEventListener('keydown', function (ev) {
       var k = (ev.key || '').toLowerCase();
-      var step = W * 0.05;
-      if (k === 'arrowleft' || k === 'a') { paddle.cx = clamp(paddle.cx - step, paddle.w / 2, W - paddle.w / 2); ev.preventDefault(); }
-      else if (k === 'arrowright' || k === 'd') { paddle.cx = clamp(paddle.cx + step, paddle.w / 2, W - paddle.w / 2); ev.preventDefault(); }
-      else if (k === ' ' || k === 'spacebar' || k === 'enter' || k === 'arrowup' || k === 'w') { tap(); ev.preventDefault(); }
+      if (k === '+' || k === '=' || k === 'add') { speedMul = Math.min(speedMul * 1.25, SPEED_MUL_MAX); ev.preventDefault(); return; }
+      if (k === '-' || k === '_' || k === 'subtract') { speedMul = Math.max(speedMul / 1.25, SPEED_MUL_MIN); ev.preventDefault(); return; }
+      if (k === ' ' || k === 'spacebar') {
+        if (state === 'playing' || paused) togglePause(); else tap();
+        ev.preventDefault(); return;
+      }
+      if (k === 'i') { aiOn = !aiOn; aiTimer = 0; ev.preventDefault(); return; }
+      if (aiOn) return;                            // AI drives the paddle
+      var step = W * 0.05, half = paddle.w / 2;
+      if (k === 'arrowleft' || k === 'a') { paddle.cx = clamp(paddle.cx - step, half, W - half); ev.preventDefault(); }
+      else if (k === 'arrowright' || k === 'd') { paddle.cx = clamp(paddle.cx + step, half, W - half); ev.preventDefault(); }
+      else if (k === 'enter' || k === 'arrowup' || k === 'w') { tap(); ev.preventDefault(); }
     });
 
     // ---- boot --------------------------------------------------------------
