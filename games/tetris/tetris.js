@@ -188,6 +188,85 @@
     return best;
   }
 
+  // --- HOLD-aware / Tetris-seeking evaluation (used by the computer) ----------
+  // Clearing more lines at once is rewarded super-linearly, so a Tetris (4 lines)
+  // is worth far more than four singles — the computer will go for big clears,
+  // which in 2-player send the most garbage ("punish the opponent").
+  var AI_CLEAR_REWARD = [0, 0.8, 2.0, 3.6, 9.0];   // normal play: clear what you can
+  // While "building" (board clean & low with an I in reach) we instead DISCOURAGE
+  // 1-3 line clears and richly reward a Tetris, so the computer banks four-line
+  // clears (the biggest garbage hit) instead of nibbling singles. The negative
+  // values roughly cancel the height-reduction the heuristic would otherwise love.
+  var AI_BUILD_REWARD = [0, -6, -12, -18, 28];
+  var AI_WELL_BONUS = 0.6;        // reward for keeping one clean edge well open for an I
+  var AI_READY_BONUS = 5;         // reward per "Tetris-ready" row (full but for the well)
+  var AI_BUILD_MAXH = 9;          // stop building (clear normally) once the stack reaches here
+
+  // Rows that are filled in every column EXCEPT the well column — the rows a
+  // vertical I would complete all at once for a Tetris.
+  function tetrisReadyRows(b, wellCol) {
+    var ready = 0;
+    for (var y = 0; y < ROWS; y++) {
+      if (b[y * COLS + wellCol]) continue;        // well must be open on this row
+      var full = true;
+      for (var x = 0; x < COLS; x++) { if (x !== wellCol && !b[y * COLS + x]) { full = false; break; } }
+      if (full) ready++;
+    }
+    return ready;
+  }
+
+  // Depth of the lower edge column below the rest of the stack (a 1-wide well an
+  // I-piece could later fill for a Tetris). Only counts a *single* low edge.
+  function edgeWellDepth(h) {
+    function depthAt(col) {
+      var restMin = Infinity;
+      for (var i = 0; i < COLS; i++) if (i !== col) restMin = Math.min(restMin, h[i]);
+      return restMin - h[col];
+    }
+    return Math.max(depthAt(0), depthAt(COLS - 1));
+  }
+
+  // Value of leaving `cells` at (px,py). Like evaluatePlacement, but with the
+  // super-linear clear reward and — when an I is in reach (`iNear`) and the board
+  // is clean and not too tall — a bonus for keeping an edge well open to set up a
+  // Tetris. The clean/short gate stops it stacking into the danger zone.
+  function aiPlacementValue(board, cells, px, py, iNear) {
+    var b = board.slice();
+    stamp(b, cells, px, py, 1);
+    var rows = fullRows(b), lines = rows.length;
+    if (lines) b = clearRows(b, rows);
+    var m = boardMetrics(b);
+    var hmax = 0;
+    for (var i = 0; i < COLS; i++) if (m.heights[i] > hmax) hmax = m.heights[i];
+    var s = W_AGG * m.agg + W_HOLES * m.holes + W_BUMP * m.bump;
+    // Build toward a Tetris only while the board is clean and low and an I is near;
+    // otherwise just clear lines to stay alive.
+    var building = iNear && m.holes <= 1 && hmax <= AI_BUILD_MAXH;
+    if (building) {
+      var wellCol = m.heights[0] <= m.heights[COLS - 1] ? 0 : COLS - 1;
+      s += AI_BUILD_REWARD[lines];
+      s += AI_READY_BONUS * Math.min(tetrisReadyRows(b, wellCol), 4);   // stack rows the I will clear
+      s += AI_WELL_BONUS * Math.min(edgeWellDepth(m.heights), 8);
+    } else {
+      s += AI_CLEAR_REWARD[lines];
+    }
+    return s;
+  }
+
+  function bestPlacementAI(board, type, iNear) {
+    var def = SHAPES[type], best = null;
+    for (var r = 0; r < 4; r++) {
+      var cells = def.rot[r];
+      for (var px = -2; px <= COLS + 1; px++) {
+        if (collides(board, cells, px, def.spawnY)) continue;
+        var py = dropY(board, cells, px, def.spawnY);
+        var s = aiPlacementValue(board, cells, px, py, iNear);
+        if (!best || s > best.s) best = { s: s, rot: r, px: px, py: py };
+      }
+    }
+    return best;
+  }
+
   // 7-bag randomiser: each bag is a shuffled permutation of all seven pieces, so
   // droughts and floods are impossible — the same fairness as modern Tetris.
   function makeBag() {
@@ -216,6 +295,7 @@
     var SOFT_MULT = 2;             // soft drop falls this many times normal speed (gentle)
     var CLEAR_TIME = 0.18;         // s the line-clear flash plays before collapsing
     var AI_STEP = 0.06;            // s between the computer's visible micro-moves
+    var AI_HOLD_MARGIN = 0.4;      // how much better the held piece must score before the computer swaps
     var GARBAGE_FOR = [0, 0, 1, 2, 4];  // rows sent for clearing 1..4 lines
 
     function gravityInterval(level) { return Math.max(0.05, 0.8 * Math.pow(0.85, level - 1)); }
@@ -251,6 +331,7 @@
         clearing: null,            // { rows:[...], t }
         pendingGarbage: 0, garbageFlash: 0,
         ai: false, aiPlan: null, aiTimer: 0,
+        pieceCount: 0, holdCount: 0, tetrisCount: 0,   // stats (also used by tests)
       };
     }
     function newBoard() { var b = new Array(ROWS * COLS); for (var i = 0; i < b.length; i++) b[i] = 0; return b; }
@@ -304,6 +385,7 @@
     function award(w, n) {
       w.score += ([0, 100, 300, 500, 800][n] || 0) * w.level;
       w.lines += n;
+      if (n >= 4) w.tetrisCount++;
       var lvl = 1 + Math.floor(w.lines / 10);
       if (lvl > w.level) w.level = lvl;
     }
@@ -326,6 +408,7 @@
       }
       stamp(w.board, cells, w.px, w.py, color);
       w.locking = false; w.lockTimer = 0; w.lockResets = 0;
+      w.pieceCount++;
       if (topped) { setDead(w); return; }
       var rows = fullRows(w.board);
       if (rows.length) {
@@ -344,6 +427,9 @@
       if (numPlayers === 1) { result = { solo: true }; }
       else { result = { winner: otherWell(w).player }; }
       state = 'over';
+      // Game's over: cancel every well's pending computer move so nothing keeps
+      // "thinking"/playing after the result is decided.
+      for (var i = 0; i < wells.length; i++) { wells[i].aiPlan = null; wells[i].aiTimer = 0; }
     }
 
     // ---- piece actions (shared by touch, keyboard and the computer) -------
@@ -381,14 +467,39 @@
       if (w.hold === null) { w.hold = cur; spawnPiece(w, dequeue(w)); }
       else { var h = w.hold; w.hold = cur; spawnPiece(w, h); }
       w.canHold = false;
+      w.holdCount++;
     }
 
     // ---- the computer -----------------------------------------------------
+    // Is an I-piece within reach (current, held, or the next two)? When so, the
+    // evaluation keeps a clean edge well open to bank a Tetris.
+    function iNearFor(w) {
+      return w.type === 'I' || w.hold === 'I' || w.queue[0] === 'I' || w.queue[1] === 'I';
+    }
+
+    // Decide the computer's move for the current piece: place it, or HOLD it and
+    // play the other available piece instead. HOLD wins when the alternative
+    // gives a clearly better board — e.g. the current piece fits poorly, or the
+    // current piece is an I worth banking until a Tetris well is ready.
+    function aiDecide(w) {
+      var iNear = iNearFor(w);
+      var curBest = bestPlacementAI(w.board, w.type, iNear) || { rot: w.rot, px: w.px, s: -Infinity };
+      if (w.canHold) {
+        var alt = w.hold !== null ? w.hold : w.queue[0];
+        if (alt && alt !== w.type) {
+          var altBest = bestPlacementAI(w.board, alt, iNear);
+          if (altBest && altBest.s > curBest.s + AI_HOLD_MARGIN) return { hold: true };
+        }
+      }
+      return curBest;
+    }
+
     function aiUpdate(w, dt) {
-      if (!piecePlayable(w)) return;
-      if (!w.aiPlan) { w.aiPlan = bestPlacement(w.board, w.type) || { rot: w.rot, px: w.px }; w.aiTimer = 0; }
+      if (state !== 'playing' || !piecePlayable(w)) return;   // never act once the game is over
+      if (!w.aiPlan) { w.aiPlan = aiDecide(w); w.aiTimer = 0; }
       w.aiTimer += dt;
       if (w.aiTimer < AI_STEP) return;
+      if (w.aiPlan.hold) { holdSwap(w); w.aiPlan = null; return; }   // swap, then re-plan the new piece
       w.aiTimer = 0;
       var plan = w.aiPlan;
       if (w.rot !== plan.rot) { if (!rotateWell(w, 1)) hardDrop(w); return; }   // line up the orientation
@@ -621,6 +732,7 @@
 
     function inRect(x, y, b) { return b && x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h; }
     function robotRect(p) { return p.robot; }
+    function holdBoxOf(p) { return { x: p.hold.x, y: p.hold.y, w: p.hold.w || (p.miniC * 4.2), h: p.miniC * 3 }; }
 
     function wellForStart(startNx) { return numPlayers === 2 ? (startNx < 0.5 ? 0 : 1) : 0; }
 
@@ -701,9 +813,11 @@
         var cl = chrome();
         if (tap && cl.pause && inRect(pt.x, pt.y, cl.pause)) { togglePause(); return; }
         if (paused) { if (tap) paused = false; return; }
-        // robot toggles first, then resolve the gesture for the piece
+        // robot toggles + HOLD-box taps first, then resolve the gesture
         for (var i = 0; i < cl.players.length; i++) {
-          if (tap && inRect(pt.x, pt.y, robotRect(cl.players[i]))) { toggleAI(wells[i]); return; }
+          if (!tap) break;
+          if (inRect(pt.x, pt.y, robotRect(cl.players[i]))) { toggleAI(wells[i]); return; }
+          if (inRect(pt.x, pt.y, holdBoxOf(cl.players[i])) && wells[i] && !wells[i].ai) { holdSwap(wells[i]); return; }
         }
         var w = wells[info.well];
         if (!w || w.dead || w.ai || info.done || !w.type) return;
@@ -925,7 +1039,7 @@
       // HOLD
       var hl = clamp(p.miniC * 0.7, 9, 18);
       label('HOLD', p.hold.x, p.hold.y - hl * 1.2, hl, MUTED);
-      var hb = { x: p.hold.x, y: p.hold.y, w: p.hold.w || (p.hold.miniC * 4.2), h: p.miniC * 3 };
+      var hb = holdBoxOf(p);
       ctx.strokeStyle = 'rgba(77,255,136,0.2)'; ctx.lineWidth = 1;
       rrect(hb.x, hb.y, hb.w, hb.h, p.miniC * 0.4); ctx.stroke();
       if (w.hold) drawMini(w.hold, hb.x + hb.w / 2, hb.y + hb.h / 2, p.miniC, !w.canHold);
@@ -1035,6 +1149,7 @@
         collides: collides, dropY: dropY, stamp: stamp, fullRows: fullRows,
         clearRows: clearRows, boardMetrics: boardMetrics,
         evaluatePlacement: evaluatePlacement, bestPlacement: bestPlacement,
+        bestPlacementAI: bestPlacementAI, aiPlacementValue: aiPlacementValue, edgeWellDepth: edgeWellDepth,
         newBoard: newBoard,
         // live game accessors, so the harness can drive real flows + the computer
         game: {
