@@ -13,8 +13,10 @@ promote it into `/games/<name>/` and link it from `/index.html` once built.
 
 ## Shipped from this list
 
-- **Gomoku** (Five-in-a-Row) — built in `games/gomoku/`. 15×15 board, pass-and-play
-  2-player plus a single-player vs-computer mode (threat-space AI, per-side AI
-  toggle like Snake), aim-and-confirm tap placement, win-line highlight, undo,
-  and a tap-to-restart prompt. Letterboxes to the largest centred square at all
-  three ratios.
+- **Gomoku** (Five-in-a-Row) — built in `games/gomoku/`. 15×15 board that boots
+  straight into a same-screen 2-player game; each player's frame carries a robot
+  icon you tap to switch that side between YOU and COMPUTER (threat-space AI), so
+  1-player, 2-player and computer-vs-computer all share one board. Aim-and-confirm
+  tap placement, win-line highlight, undo, tap-to-restart. The board is maximised
+  (full height in landscape) with chrome in the leftover space; it letterboxes to
+  the largest centred square at all three ratios.

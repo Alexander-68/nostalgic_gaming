@@ -8,11 +8,13 @@
  *   - the three design ratios via NG.classify / NG.onResize. Gomoku uses the
  *     fixed-ratio LETTERBOX strategy (the board is a square N×N grid): we centre
  *     the largest square that fits and re-letterbox on resize, so the cells stay
- *     square in 16:9, 9:8 and 9:16 alike — no reflowing the grid.
- *   - a mode menu (1 player vs computer / 2 players) plus a per-side AI toggle:
- *     tap a player's pill to hand that side to (or take it back from) the
- *     computer — the same "tap for AI" affordance Snake uses, and you can even
- *     watch computer-vs-computer.
+ *     square in 16:9, 9:8 and 9:16 alike — no reflowing the grid. The board is
+ *     maximised (full height in landscape); chrome lives in the leftover space —
+ *     side panels in landscape, top/bottom bands in portrait.
+ *   - it starts straight into a 2-player, same-screen game (no menu); each
+ *     player's frame carries a robot icon you tap to switch that side between
+ *     YOU and COMPUTER — so 1-player (vs computer), 2-player, and even
+ *     computer-vs-computer all fall out of the same board.
  *
  * Placing is two taps so a fingertip never misplaces on the dense 15×15 grid:
  * tap an intersection to AIM (a ghost stone + crosshair shows exactly where),
@@ -235,20 +237,17 @@
   NG.ready(function () {
     var canvas = document.getElementById('game');
     var ctx = canvas.getContext('2d');
-    var undoBtn = document.getElementById('undo');
 
     // ---- layout (recomputed on every resize / orientation change) ----------
     var vw = 0, vh = 0, drawScale = 1;
     var S = 0, g = 0, r = 0;                 // board side, intersection spacing, stone radius
     var boardLeft = 0, boardTop = 0;         // top-left of the square board panel
     var gx = 0, gy = 0;                      // pixel of intersection (0,0)
-    var topPad = 66, pad = 16;
-    var orientation = 'land';
-    var menuRects = null;
+    var panelMode = 'wide';                  // 'wide' (side panels) | 'stacked' (top/bottom bands)
+    var SWIPE_THRESH = 14;
 
     // ---- game state --------------------------------------------------------
-    var mode = null;                         // '1p' | '2p'
-    var state = 'menu';                      // 'menu' | 'playing' | 'over'
+    var state = 'playing';                   // 'playing' | 'over' (no menu — always 2-player)
     var board = new Array(N * N);
     var moves = [];                          // {x,y,p,t} in play order
     var lastMove = null;                     // {x,y,p}
@@ -259,13 +258,16 @@
     var aiGen = 0;                           // invalidates stale scheduled AI turns
     var clock = 0;                           // wall clock for pulsing / pop animation
     var anchors = Object.create(null);       // pointer id -> { sx, sy, moved, handled }
-    var SWIPE_THRESH = 14;
 
     function clearBoard() { for (var i = 0; i < N * N; i++) board[i] = 0; }
     function turn() { return moves.length % 2 === 0 ? 1 : 2; }   // P1 always moves first
     function aiTurnNow() { return state === 'playing' && aiFlags[turn() - 1]; }
 
     // ---- layout ------------------------------------------------------------
+    // The board square is maximised; whatever's left over hosts the chrome.
+    //   landscape (incl. squarish): side panels left & right -> board uses (near)
+    //                               the full viewport height.
+    //   portrait:                   top & bottom bands -> board uses the full width.
     function layout(info) {
       var dpr = window.devicePixelRatio || 1;
       vw = info.width; vh = info.height;
@@ -275,61 +277,98 @@
       canvas.height = Math.round(vh * dpr);
       drawScale = dpr;
 
-      pad = Math.max(10, Math.min(vw, vh) * 0.035);
-      topPad = 66;
-      var availW = vw - 2 * pad;
-      var availH = vh - topPad - pad;
-      S = Math.max(40, Math.min(availW, availH));
-      // internal margin m = 0.9g around the grid: S = 14g + 2(0.9g) = 15.8g
-      g = S / ((N - 1) + 1.8);
-      var m = 0.9 * g;
+      var padB = clamp(Math.min(vw, vh) * 0.02, 6, 22);
+      if (vw >= vh) {
+        panelMode = 'wide';
+        var minPanel = clamp(Math.min(vw, vh) * 0.18, 96, 240);   // room a side panel needs
+        S = Math.max(60, Math.min(vh - 2 * padB, vw - 2 * minPanel));
+      } else {
+        panelMode = 'stacked';
+        var band = clamp(vh * 0.14, 70, 170);                      // room a top/bottom band needs
+        S = Math.max(60, Math.min(vw - 2 * padB, vh - 2 * band));
+      }
       boardLeft = (vw - S) / 2;
-      boardTop = topPad + (availH - S) / 2;
+      boardTop = (vh - S) / 2;
+
+      g = S / ((N - 1) + 1.8);            // internal margin m = 0.9g: S = 14g + 1.8g
+      var m = 0.9 * g;
       gx = boardLeft + m;
       gy = boardTop + m;
       r = g * 0.46;
-      orientation = vw >= vh ? 'land' : 'port';
       SWIPE_THRESH = Math.max(10, g * 0.45);
-      menuRects = null;
       // A resize only re-letterboxes the fixed board; stones keep their cells.
     }
 
     function cellPx(x, y) { return { x: gx + x * g, y: gy + y * g }; }
 
+    // Positions for the chrome (player frames, FINISH/UNDO, instructions) in the
+    // space around the board. FINISH and the instructions share a side/band.
+    function chromeLayout() {
+      var unit = Math.min(vw, vh);
+      var bw = clamp(unit * (panelMode === 'wide' ? 0.16 : 0.13), 64, 168);
+      var bh = clamp(unit * 0.055, 30, 48);
+      if (panelMode === 'wide') {
+        var lw = boardLeft, rw = vw - (boardLeft + S);
+        var by0 = boardTop, by1 = boardTop + S;
+        var cxL = lw / 2, cxR = boardLeft + S + rw / 2;
+        var gap = clamp(unit * 0.03, 10, 30);
+        var pw = clamp(Math.min(lw, rw) * 0.86, 80, 220), ph = clamp(unit * 0.2, 70, 150);
+        var midY = by0 + (by1 - by0) / 2 - ph / 2;
+        return {
+          mode: 'wide',
+          finish: { x: cxL - bw / 2, y: by0 + gap, w: bw, h: bh },
+          undo: { x: cxR - bw / 2, y: by0 + gap, w: bw, h: bh },
+          p1: { x: cxL - pw / 2, y: midY, w: pw, h: ph },
+          p2: { x: cxR - pw / 2, y: midY, w: pw, h: ph },
+          help: { x: cxL, y: by1 - gap, align: 'center', baseline: 'bottom' },
+        };
+      }
+      var tb0 = 0, tb1 = boardTop, bb0 = boardTop + S;
+      var cx = vw / 2, mgx = clamp(vw * 0.03, 8, 26), mgy = clamp(tb1 * 0.14, 6, 20);
+      var pw2 = clamp(vw * 0.6, 150, Math.min(unit * 0.82, 340)), ph2 = clamp(tb1 * 0.46, 48, 104);
+      return {
+        mode: 'stacked',
+        finish: { x: mgx, y: tb0 + mgy, w: bw, h: bh },
+        undo: { x: vw - mgx - bw, y: tb0 + mgy, w: bw, h: bh },
+        p1: { x: cx - pw2 / 2, y: tb1 - ph2 - mgy, w: pw2, h: ph2 },
+        p2: { x: cx - pw2 / 2, y: bb0 + (vh - bb0) / 2 - ph2 / 2, w: pw2, h: ph2 },
+        help: { x: mgx, y: tb0 + mgy + bh + clamp(unit * 0.02, 6, 14), align: 'left', baseline: 'top' },
+      };
+    }
+
+    // The robot toggle's hit/draw box inside a player frame.
+    // Player frame internals: "P#" + robot icon share the top line; the role
+    // text ("YOU" / "COMPUTER" / "THINKING…") gets its own line below with the
+    // full frame width, so the longer labels never run past the frame.
+    function pillLayout(b) {
+      var topH = b.h * 0.56;
+      var is = clamp(Math.min(topH * 0.82, b.w * 0.34), 28, 84);
+      var labelFont = Math.min(topH * 0.62, b.h * 0.42);
+      var labelW = labelFont * 1.25;                     // "P2" ≈ two monospace chars
+      var gap = is * 0.28;
+      var groupW = labelW + gap + is;
+      var startX = b.x + b.w / 2 - groupW / 2;
+      var rowCy = b.y + topH / 2;
+      return {
+        labelX: startX + labelW / 2, labelY: rowCy, labelFont: labelFont,
+        icon: { x: startX + labelW + gap, y: rowCy - is / 2, w: is, h: is },
+        roleFont: Math.min((b.h - topH) * 0.5, b.w * 0.15), roleY: b.y + topH + (b.h - topH) / 2,
+      };
+    }
+    function iconRectFor(b) { return pillLayout(b).icon; }
+
     // ---- flow --------------------------------------------------------------
-    function updateChrome() {
-      if (undoBtn) undoBtn.style.display = (state !== 'menu' && moves.length > 0) ? 'flex' : 'none';
-    }
-
-    function pickMode(m) {
-      mode = m;
-      aiFlags = m === '1p' ? [false, true] : [false, false];   // 1p: you (P1) vs computer (P2)
-      newGame();
-    }
-
     function newGame() {
       clearBoard();
       moves = []; lastMove = null; preview = null; result = null; winLine = null;
       state = 'playing';
-      updateChrome();
       refreshAI();
     }
-
-    function restart() { newGame(); }                 // same mode + AI sides, fresh board
-
-    function toMenu() {
-      state = 'menu';
-      aiGen++;
-      moves = []; lastMove = null; preview = null; result = null; winLine = null;
-      mode = null; aiFlags = [false, false];
-      menuRects = null;
-      updateChrome();
-    }
+    function restart() { newGame(); }                 // same robot toggles, fresh board
 
     function toggleAI(player) {
       aiFlags[player - 1] = !aiFlags[player - 1];
       preview = null;
-      updateChrome();
       refreshAI();
     }
 
@@ -340,9 +379,8 @@
       lastMove = { x: x, y: y, p: p };
       preview = null;
       var line = winningLine(board, x, y, p);
-      if (line) { result = { winner: p }; winLine = line; state = 'over'; updateChrome(); return; }
-      if (moves.length >= N * N) { result = { draw: true }; state = 'over'; updateChrome(); return; }
-      updateChrome();
+      if (line) { result = { winner: p }; winLine = line; state = 'over'; return; }
+      if (moves.length >= N * N) { result = { draw: true }; state = 'over'; return; }
       refreshAI();
     }
 
@@ -358,7 +396,6 @@
       lastMove = moves.length ? moves[moves.length - 1] : null;
       preview = null; result = null; winLine = null;
       state = 'playing';
-      updateChrome();
       refreshAI();
     }
 
@@ -366,6 +403,8 @@
       clearBoard();
       for (var i = 0; i < moves.length; i++) board[idx(moves[i].x, moves[i].y)] = moves[i].p;
     }
+
+    function finishToCatalogue() { window.location.href = '../../index.html'; }
 
     // Schedule (or cancel) the computer's move for the current turn.
     function refreshAI() {
@@ -392,13 +431,6 @@
       return { x: ix, y: iy };
     }
 
-    function hitMenu(x, y) {
-      var rcts = menuRects || computeMenuRects();
-      if (inRect(x, y, rcts.solo)) { pickMode('1p'); return true; }
-      if (inRect(x, y, rcts.duo)) { pickMode('2p'); return true; }
-      return false;
-    }
-
     // A board tap during play: aim, or confirm if the ghost is already there.
     function boardTap(px, py) {
       if (state !== 'playing' || aiTurnNow()) return;
@@ -412,9 +444,7 @@
 
     NG.createTouch(canvas, {
       onDown: function (pt) {
-        var a = { sx: pt.x, sy: pt.y, moved: false, handled: false };
-        anchors[pt.id] = a;
-        if (state === 'menu' && hitMenu(pt.x, pt.y)) a.handled = true;   // menu responds on press
+        anchors[pt.id] = { sx: pt.x, sy: pt.y, moved: false, handled: false };
       },
       onMove: function (pt) {
         var a = anchors[pt.id];
@@ -431,39 +461,28 @@
       onUp: function (pt) {
         var a = anchors[pt.id];
         delete anchors[pt.id];
-        if (!a || a.handled || a.moved) return;             // spent on menu, or it was a drag
-        if (state === 'menu') return;
-        var sr = statusRects();
-        if (inRect(pt.x, pt.y, sr.p1)) { toggleAI(1); return; }
-        if (inRect(pt.x, pt.y, sr.p2)) { toggleAI(2); return; }
-        if (state === 'over') { restart(); return; }
-        if (state === 'playing') boardTap(pt.x, pt.y);
+        if (!a || a.handled || a.moved) return;             // it was a drag
+        var cl = chromeLayout();
+        if (inRect(pt.x, pt.y, cl.finish)) { finishToCatalogue(); return; }
+        if (inRect(pt.x, pt.y, cl.undo)) { if (moves.length) undo(); return; }
+        if (inRect(pt.x, pt.y, iconRectFor(cl.p1))) { toggleAI(1); return; }   // robot toggles YOU/COMPUTER
+        if (inRect(pt.x, pt.y, iconRectFor(cl.p2))) { toggleAI(2); return; }
+        if (state === 'over') { restart(); return; }        // tap the board to play again
+        boardTap(pt.x, pt.y);
       },
     });
 
     // Keyboard: desktop-development convenience only (the game never requires it).
     window.addEventListener('keydown', function (ev) {
       var k = (ev.key || '').toLowerCase();
-      if (state === 'menu') {
-        if (k === '1') pickMode('1p');
-        else if (k === '2') pickMode('2p');
-        return;
-      }
       if (k === 'u') { undo(); ev.preventDefault(); return; }
       if (k === 'r') { restart(); ev.preventDefault(); return; }
       if (state === 'over' && (k === 'enter' || k === ' ' || k === 'spacebar')) { restart(); ev.preventDefault(); }
     });
 
-    // FINISH (button + ESC/BACK/HOME) is contextual: from a game it backs out to
-    // the mode menu; from the menu it leaves for the catalogue.
-    NG.enableFinish({
-      button: '#finish',
-      onFinish: function () {
-        if (state === 'menu') window.location.href = '../../index.html';
-        else toMenu();
-      },
-    });
-    if (undoBtn) undoBtn.addEventListener('click', function (e) { e.preventDefault(); undo(); });
+    // ESC / BACK / HOME (kiosk hardware + remotes) also leave for the catalogue;
+    // the on-screen FINISH button is the touch affordance.
+    NG.onExit(finishToCatalogue);
 
     // ---- drawing helpers ---------------------------------------------------
     function rrect(px, py, w, h, rad) {
@@ -479,8 +498,8 @@
     function hex(p) { return p === 1 ? FG : P2; }
     function stoneShades(p) {
       return p === 1
-        ? { hi: 'rgba(216,255,232,0.96)', mid: FG, lo: '#178f4a' }
-        : { hi: 'rgba(255,245,212,0.96)', mid: P2, lo: '#b9852a' };
+        ? { hi: 'rgba(220,255,233,0.98)', mid: FG, lo: '#1f9a54', edge: '#0c5e30' }
+        : { hi: 'rgba(255,247,216,0.98)', mid: P2, lo: '#caa23a', edge: '#7c5a12' };
     }
 
     // ---- board + stones ----------------------------------------------------
@@ -491,7 +510,6 @@
       rrect(boardLeft, boardTop, S, S, g * 0.5);
       ctx.fill();
 
-      // grid
       ctx.strokeStyle = rgba(1, 0.16);
       ctx.lineWidth = Math.max(1, g * 0.045);
       ctx.beginPath();
@@ -503,51 +521,45 @@
       }
       ctx.stroke();
 
-      // star points (hoshi) at the traditional 15×15 spots
-      var star = [3, 7, 11];
+      var star = [3, 7, 11];                            // hoshi
       ctx.fillStyle = rgba(1, 0.5);
       for (var a = 0; a < star.length; a++) for (var b = 0; b < star.length; b++) {
         var c = cellPx(star[a], star[b]);
         ctx.beginPath(); ctx.arc(c.x, c.y, Math.max(1.5, g * 0.1), 0, Math.PI * 2); ctx.fill();
       }
 
-      // panel border
       ctx.lineWidth = Math.max(2, g * 0.08);
       ctx.strokeStyle = DIM;
-      ctx.shadowColor = DIM; ctx.shadowBlur = g * 0.45;
       rrect(boardLeft, boardTop, S, S, g * 0.5);
       ctx.stroke();
-      ctx.shadowBlur = 0;
     }
 
+    // Crisp, well-defined stones: a shaded bead with a clean dark rim and NO glow.
     function drawStone(x, y, p, scale) {
       var c = cellPx(x, y), rr = r * scale;
       if (rr < 0.5) return;
       var sh = stoneShades(p);
-      ctx.shadowColor = hex(p); ctx.shadowBlur = g * 0.3;
-      var grad = ctx.createRadialGradient(c.x - rr * 0.32, c.y - rr * 0.32, rr * 0.12, c.x, c.y, rr);
-      grad.addColorStop(0, sh.hi); grad.addColorStop(0.45, sh.mid); grad.addColorStop(1, sh.lo);
+      var grad = ctx.createRadialGradient(c.x - rr * 0.35, c.y - rr * 0.35, rr * 0.1, c.x, c.y, rr);
+      grad.addColorStop(0, sh.hi); grad.addColorStop(0.5, sh.mid); grad.addColorStop(1, sh.lo);
       ctx.fillStyle = grad;
       ctx.beginPath(); ctx.arc(c.x, c.y, rr, 0, Math.PI * 2); ctx.fill();
-      ctx.shadowBlur = 0;
-      ctx.lineWidth = Math.max(1, g * 0.03);
-      ctx.strokeStyle = sh.lo;
+      ctx.lineWidth = Math.max(1, g * 0.06);
+      ctx.strokeStyle = sh.edge;
       ctx.beginPath(); ctx.arc(c.x, c.y, rr, 0, Math.PI * 2); ctx.stroke();
     }
 
     function drawStones() {
       for (var i = 0; i < moves.length; i++) {
         var mv = moves[i];
-        var age = (clock - mv.t) / 0.13;
+        var age = (clock - mv.t) / 0.12;
         var pp = age >= 1 ? 1 : age < 0 ? 0 : age;
         var ease = 1 - (1 - pp) * (1 - pp);          // easeOutQuad pop
-        drawStone(mv.x, mv.y, mv.p, 0.2 + 0.8 * ease);
+        drawStone(mv.x, mv.y, mv.p, 0.55 + 0.45 * ease);
       }
-      // last-move marker: a small dark pip on the freshest stone
-      if (lastMove) {
+      if (lastMove) {                                 // last-move pip
         var c = cellPx(lastMove.x, lastMove.y);
         ctx.fillStyle = '#06120b';
-        ctx.beginPath(); ctx.arc(c.x, c.y, r * 0.18, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(c.x, c.y, r * 0.17, 0, Math.PI * 2); ctx.fill();
       }
     }
 
@@ -555,14 +567,12 @@
       if (!preview) return;
       var c = cellPx(preview.x, preview.y), p = turn(), span = (N - 1) * g;
       var pulse = 0.5 + 0.5 * Math.abs(Math.sin(clock * 3.2));
-      // crosshair across the board so the aim reads from under the fingertip
-      ctx.strokeStyle = rgba(p, 0.28);
+      ctx.strokeStyle = rgba(p, 0.28);               // crosshair to read under the fingertip
       ctx.lineWidth = Math.max(1, g * 0.04);
       ctx.beginPath();
       ctx.moveTo(gx, c.y); ctx.lineTo(gx + span, c.y);
       ctx.moveTo(c.x, gy); ctx.lineTo(c.x, gy + span);
       ctx.stroke();
-      // ghost stone
       ctx.fillStyle = rgba(p, 0.16);
       ctx.beginPath(); ctx.arc(c.x, c.y, r, 0, Math.PI * 2); ctx.fill();
       ctx.globalAlpha = pulse;
@@ -574,72 +584,94 @@
       ctx.globalAlpha = 1;
     }
 
-    // ---- status pills (whose turn + tap-to-toggle-AI) ----------------------
-    function statusRects() {
-      var unit = Math.min(vw, vh), p1, p2;
-      if (orientation === 'land') {
-        var leftVoid = boardLeft, rightVoid = vw - (boardLeft + S);
-        var pw = clamp(Math.max(leftVoid, rightVoid) * 0.82, 92, Math.min(unit * 0.34, 210));
-        var ph = clamp(unit * 0.22, 76, 150);
-        var cy = boardTop + S / 2 - ph / 2;
-        p1 = { x: clamp(leftVoid / 2 - pw / 2, 6, vw - pw - 6), y: cy, w: pw, h: ph };
-        p2 = { x: clamp(boardLeft + S + rightVoid / 2 - pw / 2, 6, vw - pw - 6), y: cy, w: pw, h: ph };
-      } else {
-        var topVoid = boardTop - topPad, botVoid = vh - (boardTop + S);
-        var ph2 = clamp(Math.min(topVoid, botVoid) * 0.74, 52, 104);
-        var pw2 = clamp(vw * 0.6, 150, Math.min(unit * 0.78, 320));
-        p1 = { x: vw / 2 - pw2 / 2, y: topPad + topVoid / 2 - ph2 / 2, w: pw2, h: ph2 };
-        p2 = { x: vw / 2 - pw2 / 2, y: boardTop + S + botVoid / 2 - ph2 / 2, w: pw2, h: ph2 };
-      }
-      return { p1: p1, p2: p2 };
-    }
-
+    // ---- player frames + robot toggle --------------------------------------
     function roleText(player) {
       if (aiFlags[player - 1]) return aiTurnNow() && turn() === player ? 'THINKING…' : 'COMPUTER';
-      return mode === '1p' && player === 1 ? 'YOU' : 'PLAYER ' + player;
+      return 'YOU';
+    }
+
+    function drawRobot(ic, color, active, bright) {
+      var cx = ic.x + ic.w / 2, cy = ic.y + ic.h / 2, s = ic.w * 0.42;
+      ctx.globalAlpha = active ? 1 : (bright ? 0.85 : 0.55);
+      ctx.lineWidth = Math.max(1.5, s * 0.16);
+      ctx.strokeStyle = color;
+      var hw = s * 1.5, hh = s * 1.25, hx = cx - hw / 2, hy = cy - hh * 0.36;
+      ctx.beginPath(); ctx.moveTo(cx, hy); ctx.lineTo(cx, hy - s * 0.5); ctx.stroke();   // antenna
+      ctx.fillStyle = color;
+      ctx.beginPath(); ctx.arc(cx, hy - s * 0.6, Math.max(1.5, s * 0.16), 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = active ? color : 'rgba(255,255,255,0.04)';                         // head
+      rrect(hx, hy, hw, hh, s * 0.32); ctx.fill(); ctx.stroke();
+      var face = active ? BOARD_BG : color;                                              // eyes + mouth
+      ctx.fillStyle = face;
+      ctx.beginPath(); ctx.arc(cx - s * 0.4, cy + s * 0.04, s * 0.2, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(cx + s * 0.4, cy + s * 0.04, s * 0.2, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = face; ctx.lineWidth = Math.max(1, s * 0.14);
+      ctx.beginPath(); ctx.moveTo(cx - s * 0.34, cy + s * 0.5); ctx.lineTo(cx + s * 0.34, cy + s * 0.5); ctx.stroke();
+      ctx.globalAlpha = 1;
     }
 
     function drawPill(b, player) {
       var color = hex(player);
       var isTurn = state === 'playing' && turn() === player;
+      var ai = aiFlags[player - 1];
       ctx.lineWidth = isTurn ? 3 : 1.5;
       ctx.strokeStyle = color;
       ctx.globalAlpha = isTurn ? 1 : 0.5;
       ctx.fillStyle = isTurn ? rgba(player, 0.07) : 'rgba(255,255,255,0.02)';
       rrect(b.x, b.y, b.w, b.h, Math.min(b.w, b.h) * 0.2);
       ctx.fill();
-      ctx.shadowColor = color; ctx.shadowBlur = isTurn ? 16 : 0;
       ctx.stroke();
-      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+
+      var pl = pillLayout(b);
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillStyle = color;
-      ctx.font = 'bold ' + (b.h * 0.36).toFixed(0) + 'px "Courier New", monospace';
-      ctx.fillText('P' + player, b.x + b.w / 2, b.y + b.h * 0.38);
-      ctx.fillStyle = aiFlags[player - 1] ? color : MUTED;
       ctx.globalAlpha = isTurn ? 1 : 0.7;
-      ctx.font = 'bold ' + (b.h * 0.18).toFixed(0) + 'px "Courier New", monospace';
-      ctx.fillText(roleText(player), b.x + b.w / 2, b.y + b.h * 0.72);
+      ctx.fillStyle = color;                              // line 1: "P#" + robot icon
+      ctx.font = 'bold ' + pl.labelFont.toFixed(0) + 'px "Courier New", monospace';
+      ctx.fillText('P' + player, pl.labelX, pl.labelY);
+      drawRobot(pl.icon, color, ai, isTurn);
+      ctx.globalAlpha = isTurn ? 1 : 0.7;                 // line 2: role, full width
+      ctx.fillStyle = ai ? color : MUTED;
+      ctx.font = 'bold ' + pl.roleFont.toFixed(0) + 'px "Courier New", monospace';
+      ctx.fillText(roleText(player), b.x + b.w / 2, pl.roleY);
       ctx.globalAlpha = 1;
     }
 
-    function drawStatus() {
-      var sr = statusRects();
-      drawPill(sr.p1, 1);
-      drawPill(sr.p2, 2);
+    // ---- chrome: FINISH / UNDO buttons + instructions ----------------------
+    function drawButton(b, label, enabled) {
+      ctx.globalAlpha = enabled ? 1 : 0.32;
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = FG;
+      ctx.fillStyle = 'rgba(0,0,0,0.4)';
+      rrect(b.x, b.y, b.w, b.h, Math.min(b.w, b.h) * 0.28);
+      ctx.fill(); ctx.stroke();
+      ctx.fillStyle = FG;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.font = 'bold ' + (b.h * 0.4).toFixed(0) + 'px "Courier New", monospace';
+      ctx.fillText(label, b.x + b.w / 2, b.y + b.h * 0.54);
+      ctx.globalAlpha = 1;
     }
 
-    function drawHelp() {
-      var unit = Math.min(vw, vh);
-      var msg = aiTurnNow()
-        ? 'COMPUTER THINKING…'
-        : 'TAP TO AIM · TAP AGAIN TO PLACE · TAP A PLAYER FOR COMPUTER';
-      ctx.shadowBlur = 0;
-      ctx.fillStyle = MUTED;
-      ctx.globalAlpha = 0.75;
-      ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-      ctx.font = 'bold ' + clamp(unit * 0.022, 10, 15).toFixed(0) + 'px "Courier New", monospace';
-      ctx.fillText(msg, vw / 2, vh - Math.max(6, pad * 0.4));
+    var HELP = ['TAP TO AIM', 'TAP AGAIN TO PLACE', 'TAP A ROBOT', 'FOR COMPUTER'];
+    function drawHelp(h) {
+      var fs = clamp(Math.min(vw, vh) * 0.022, 10, 15), lh = fs * 1.5, i;
+      ctx.fillStyle = MUTED; ctx.globalAlpha = 0.8;
+      ctx.font = 'bold ' + fs.toFixed(0) + 'px "Courier New", monospace';
+      ctx.textAlign = h.align; ctx.textBaseline = h.baseline;
+      if (h.baseline === 'bottom') {
+        for (i = 0; i < HELP.length; i++) ctx.fillText(HELP[HELP.length - 1 - i], h.x, h.y - i * lh);
+      } else {
+        for (i = 0; i < HELP.length; i++) ctx.fillText(HELP[i], h.x, h.y + i * lh);
+      }
       ctx.globalAlpha = 1;
+    }
+
+    function drawChrome(cl) {
+      drawPill(cl.p1, 1);
+      drawPill(cl.p2, 2);
+      drawButton(cl.finish, 'FINISH', true);
+      drawButton(cl.undo, 'UNDO', moves.length > 0);
+      drawHelp(cl.help);
     }
 
     // ---- victory / draw ----------------------------------------------------
@@ -648,14 +680,13 @@
       ctx.fillStyle = 'rgba(0,0,0,0.5)';
       ctx.fillRect(0, 0, vw, vh);
 
-      // light up the winning line
       if (winLine) {
         var a = cellPx(winLine[0][0], winLine[0][1]);
         var z = cellPx(winLine[winLine.length - 1][0], winLine[winLine.length - 1][1]);
         var col = hex(result.winner);
         var pulse = 0.6 + 0.4 * Math.abs(Math.sin(clock * 3));
         ctx.lineCap = 'round';
-        ctx.strokeStyle = col; ctx.shadowColor = col; ctx.shadowBlur = g * 0.8;
+        ctx.strokeStyle = col; ctx.shadowColor = col; ctx.shadowBlur = g * 0.6;
         ctx.globalAlpha = pulse;
         ctx.lineWidth = g * 0.22;
         ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(z.x, z.y); ctx.stroke();
@@ -667,81 +698,35 @@
         ctx.globalAlpha = 1; ctx.shadowBlur = 0; ctx.lineCap = 'butt';
       }
 
-      var unit = Math.min(vw, vh), cx = vw / 2, cy = vh / 2;
+      var unit = Math.min(vw, vh), cx = vw / 2;
+
+      // Anchor the banner clear of the winning line: drop it into whichever band
+      // (above or below the line) has more room, so the text never sits on top of
+      // the highlighted five. (A draw has no line, so it stays centred.)
+      var cyText = vh / 2, half = unit * 0.12;
+      if (winLine) {
+        var lineTop = Math.min(a.y, z.y) - g, lineBot = Math.max(a.y, z.y) + g, mg = unit * 0.05;
+        if (lineTop - mg >= (vh - mg) - lineBot) cyText = clamp((mg + lineTop) / 2, mg + half, lineTop - half);
+        else cyText = clamp((lineBot + (vh - mg)) / 2, lineBot + half, vh - mg - half);
+      }
+
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       if (result.draw) {
         ctx.fillStyle = INK;
         ctx.font = 'bold ' + (unit * 0.1).toFixed(0) + 'px "Courier New", monospace';
-        ctx.fillText('DRAW', cx, cy - unit * 0.05);
+        ctx.fillText('DRAW', cx, cyText - unit * 0.045);
       } else {
         var c2 = hex(result.winner);
-        ctx.fillStyle = c2; ctx.shadowColor = c2; ctx.shadowBlur = unit * 0.03;
+        ctx.fillStyle = c2; ctx.shadowColor = c2; ctx.shadowBlur = unit * 0.02;
         ctx.font = 'bold ' + (unit * 0.1).toFixed(0) + 'px "Courier New", monospace';
-        ctx.fillText('PLAYER ' + result.winner + ' WINS', cx, cy - unit * 0.05);
+        ctx.fillText('PLAYER ' + result.winner + ' WINS', cx, cyText - unit * 0.045);
         ctx.shadowBlur = 0;
       }
       var pulse2 = 0.55 + 0.45 * Math.abs(Math.sin(clock * 2.2));
       ctx.globalAlpha = pulse2; ctx.fillStyle = INK;
       ctx.font = 'bold ' + (unit * 0.04).toFixed(0) + 'px "Courier New", monospace';
-      ctx.fillText('TAP TO PLAY AGAIN', cx, cy + unit * 0.06);
+      ctx.fillText('TAP TO PLAY AGAIN', cx, cyText + unit * 0.055);
       ctx.globalAlpha = 1;
-    }
-
-    // ---- menu --------------------------------------------------------------
-    function computeMenuRects() {
-      var cx = vw / 2, solo, duo;
-      if (orientation === 'land') {
-        var bw = Math.min(vw * 0.34, 360), bh = Math.min(vh * 0.32, 230);
-        var gap = vw * 0.05, y = vh * 0.46;
-        solo = { x: cx - gap / 2 - bw, y: y, w: bw, h: bh };
-        duo = { x: cx + gap / 2, y: y, w: bw, h: bh };
-      } else {
-        var bw2 = Math.min(vw * 0.74, 440), bh2 = Math.min(vh * 0.16, 150);
-        var gap2 = vh * 0.04, y2 = vh * 0.42;
-        solo = { x: cx - bw2 / 2, y: y2, w: bw2, h: bh2 };
-        duo = { x: cx - bw2 / 2, y: y2 + bh2 + gap2, w: bw2, h: bh2 };
-      }
-      return { solo: solo, duo: duo };
-    }
-
-    function drawButton(b, label, sub, color) {
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = color;
-      ctx.fillStyle = 'rgba(255,255,255,0.03)';
-      rrect(b.x, b.y, b.w, b.h, Math.min(b.w, b.h) * 0.14);
-      ctx.fill();
-      ctx.shadowColor = color; ctx.shadowBlur = 12; ctx.stroke(); ctx.shadowBlur = 0;
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillStyle = color;
-      ctx.font = 'bold ' + (b.h * 0.24).toFixed(0) + 'px "Courier New", monospace';
-      ctx.fillText(label, b.x + b.w / 2, b.y + b.h * 0.42);
-      ctx.fillStyle = MUTED;
-      ctx.font = 'bold ' + (b.h * 0.15).toFixed(0) + 'px "Courier New", monospace';
-      ctx.fillText(sub, b.x + b.w / 2, b.y + b.h * 0.72);
-    }
-
-    function drawMenu() {
-      ctx.shadowBlur = 0;
-      ctx.fillStyle = '#060a08';
-      ctx.fillRect(0, 0, vw, vh);
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      var cx = vw / 2, unit = Math.min(vw, vh);
-
-      // a little decorative cross of stones behind the title
-      ctx.fillStyle = FG; ctx.shadowColor = FG; ctx.shadowBlur = unit * 0.03;
-      ctx.font = 'bold ' + (unit * 0.12).toFixed(0) + 'px "Courier New", monospace';
-      ctx.fillText('GOMOKU', cx, vh * 0.2);
-      ctx.shadowBlur = 0; ctx.fillStyle = MUTED;
-      ctx.font = 'bold ' + (unit * 0.028).toFixed(0) + 'px "Courier New", monospace';
-      ctx.fillText('FIVE IN A ROW', cx, vh * 0.2 + unit * 0.085);
-
-      menuRects = computeMenuRects();
-      drawButton(menuRects.solo, '1 PLAYER', 'VS COMPUTER', FG);
-      drawButton(menuRects.duo, '2 PLAYERS', 'PASS & PLAY', P2);
-
-      ctx.fillStyle = MUTED;
-      ctx.font = 'bold ' + (unit * 0.026).toFixed(0) + 'px "Courier New", monospace';
-      ctx.fillText('TAP AN INTERSECTION · FIRST TO FIVE WINS', cx, vh * 0.9);
     }
 
     // ---- frame -------------------------------------------------------------
@@ -749,18 +734,16 @@
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.setTransform(drawScale, 0, 0, drawScale, 0, 0);
-      if (state === 'menu') { drawMenu(); return; }
       drawBoard();
       drawStones();
       if (state === 'playing' && !aiTurnNow()) drawPreview();
-      drawStatus();
+      drawChrome(chromeLayout());
       if (state === 'over') drawOver();
-      else drawHelp();
     }
 
     // ---- boot --------------------------------------------------------------
     NG.onResize(layout);
-    updateChrome();
+    newGame();
 
     var last = 0;
     function loop(t) {
