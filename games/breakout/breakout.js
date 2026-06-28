@@ -63,8 +63,10 @@
   var PADDLE_MIN_SCALE = 0.5;    // ...down to half size (reached around level 9)
   var AI_LAUNCH_DELAY = 0.6;     // AI mode: beat on the paddle before it serves
   var AI_RESTART_DELAY = 1.6;    // AI mode: hold on game-over before it replays
-  var AI_PADDLE_SPEED = 3.2;     // AI paddle max travel, in screen widths / second (keeps up with the lively ball)
-  var AI_FALLBACK_FRAMES = 110;  // AI: frames with no brick broken before it steers the ball back to the bricks
+  var AI_PADDLE_SPEED = 20;      // AI paddle travel, in screen widths / second — so fast it is
+                                 //   effectively instant: the paddle is never the reason for a miss,
+                                 //   freeing the AI to just clear bricks (crank higher for "infinite")
+  var AI_FALLBACK_FRAMES = 35;   // AI: frames with no brick broken before it perturbs its aim to break an orbit
   var AI_GIVEUP_FRAMES = 550;    // AI: ...and (rare last resort) before it drops the ball to reset (can't lock)
   var AI_MIN_REL = 0.24;         // AI: minimum paddle contact offset — never returns the ball near-vertical
 
@@ -85,7 +87,6 @@
     var started = false;
     var bricks = [];                  // { row, col, alive, tier, color, points }
     var bricksLeft = 0;
-    var fullWall = 0;                 // brick count of a fresh wall (for AI phase thresholds)
     var score = 0, lives = START_LIVES, level = 1;
     var paddle = { cx: 0, w: 0, h: 0, y: 0 };
     var ball = { x: 0, y: 0, vx: 0, vy: 0, r: 0, speed: 0 };
@@ -97,7 +98,6 @@
     var speedMul = 1;                 // +/- debug time scale
     var wonTimer = 0;                 // counts up during the 'won' banner, then auto-advances
     var aiTimer = 0;                  // AI dwell before it serves / replays
-    var aiEdge = 0;                   // AI tunnel side: -1 left, +1 right, 0 = re-pick
     var aiPrevBricks = 1e9;           // bricksLeft last AI tick — to detect "no brick broken"
     var aiNoHit = 0;                  // consecutive descending ticks with no brick broken
 
@@ -180,8 +180,7 @@
           bricks.push({ row: r, col: c, alive: true, tier: t, color: TIERS[t].color, points: TIERS[t].points });
         }
       }
-      bricksLeft = fullWall = rows * cols;
-      aiEdge = 0;                     // re-pick which edge to tunnel for the new wall
+      bricksLeft = rows * cols;
     }
     // Collision uses the full, contiguous cell (bricks touch, so the ball can't
     // thread the visual gaps); drawing insets the cell for the gridded look.
@@ -246,11 +245,17 @@
 
     // ---- AI autoplay -------------------------------------------------------
     // A hands-free "watch it play" / take-over mode. The paddle is driven by a
-    // predict-and-intercept controller (where will the ball cross the paddle's
-    // line, folding side-wall bounces?) that nudges the contact point so the
-    // rebound heads back toward whatever bricks remain — so it clears walls
-    // instead of drilling one column. With AI on it also serves, advances, and
-    // replays on its own, looping as an attract demo until you tap it off.
+    // predict-and-DEFLECT controller: it works out WHERE the ball will next cross
+    // the paddle's line (folding in side-wall bounces) and parks there with its
+    // contact point offset so the rebound is aimed straight at a standing brick.
+    // Two deliberate choices, per the brief:
+    //   - it does NOT track the ball. While the ball rises the paddle just holds;
+    //     chasing a rising ball is pointless. It only moves to deflect the descent.
+    //   - paddle travel is effectively unlimited (AI_PADDLE_SPEED), so it never has
+    //     to play safe — it just keeps banging the ball into the wall to clear it
+    //     as fast as it can, instead of nursing the ball off into a corner.
+    // With AI on it also serves, advances, and replays on its own, looping as an
+    // attract demo until you tap it off.
     function predictPaddleX() {
       if (ball.vy <= 0) return ball.x;
       var plane = paddle.y - ball.r;
@@ -263,14 +268,8 @@
       if (x > span) x = 2 * span - x;          // reflect off the side walls
       return lo + x;
     }
-    // Bricks still standing in each column.
-    function colCounts() {
-      var counts = [];
-      for (var c = 0; c < cols; c++) counts[c] = 0;
-      for (var i = 0; i < bricks.length; i++) if (bricks[i].alive) counts[bricks[i].col]++;
-      return counts;
-    }
-    // Centre of mass (x) of the standing bricks — the un-stick pulls the ball here.
+    // Centre of mass (x) of the standing bricks — used to pick a side when a return
+    // would otherwise be dead-vertical.
     function brickCentroidX() {
       var sx = 0, n = 0;
       for (var i = 0; i < bricks.length; i++) {
@@ -279,78 +278,61 @@
       }
       return n ? sx / n : W / 2;
     }
-    // The standing brick whose column sits closest to x — the mop-up target
-    // (always a real brick, so aiming here is guaranteed to break one).
-    function nearestBrickX(x) {
-      var best = x, bestD = Infinity;
+    // The column-centre x of the standing brick nearest (in 2D) to where the ball
+    // leaves the paddle. Preferring the truly-closest brick keeps each return short
+    // and its aim accurate, so the ball eats the wall from the bottom up and keeps
+    // breaking bricks — rather than being lobbed up through an already-cleared
+    // channel where an imprecise aim sails past everything.
+    function nearestBrickX(px) {
+      var oy = paddle.y, best = px, bestD = Infinity;
       for (var i = 0; i < bricks.length; i++) {
         if (!bricks[i].alive) continue;
         var bx = fieldX + (bricks[i].col + 0.5) * cellW;
-        var d = Math.abs(bx - x);
+        var by = fieldTop + (bricks[i].row + 0.5) * cellH;
+        var dx = bx - px, dy = by - oy, d = dx * dx + dy * dy;
         if (d < bestD) { bestD = d; best = bx; }
       }
       return best;
     }
-    // The smart move: BANK off a side wall. Rather than picking bricks off one at a
-    // time, the AI sends the ball up the side gap on one edge so it ricochets off
-    // the wall, rises into the space above the bricks, and rakes the tops — the
-    // classic Breakout tactic, and far faster on a full wall. Targeting is layered
-    // so it's effective AND can never lock or idle:
-    //   1. early on, bank the ball up the chosen side to work the top;
-    //   2. past the half-cleared mark (and for the last stragglers) switch to
-    //      efficient nearest-brick clearing;
-    //   3. a global minimum return angle bans dead-vertical bouncing — the ball
-    //      always plays forward;
-    //   4. if nothing breaks for a while (ball loose in a cleared pocket), aim
-    //      straight at the nearest brick and perturb to break any stable orbit;
-    //   5. and if even that fails, give up and let the ball drop: a fresh serve
-    //      always breaks the orbit, so an infinite lock is impossible.
+    // Position the paddle to DEFLECT the ball, not to track it. The whole strategy
+    // is "every return must break a brick": aim the rebound straight at the nearest
+    // standing brick so the ball stays in the wall, working it down quickly, rather
+    // than being lobbed up a side gap into a corner. Because the paddle is so fast,
+    // there is no need to play safe — it can always reach the deflection point.
+    // Safety nets keep it honest and unlockable:
+    //   - a minimum return angle bans dead-vertical "up and down" bouncing;
+    //   - if nothing breaks for a while (ball loose in a cleared pocket), the aim is
+    //     perturbed to shake the ball out of a stable orbit;
+    //   - and as an all-but-impossible last resort it dodges aside and drops the
+    //     ball, because a fresh serve ALWAYS breaks an orbit — so it can never lock.
     function aiMovePaddle(edt) {
       var half = paddle.w / 2, target;
-      if (ball.vy > 0) {                         // descending — set up the next hit
+      if (ball.vy > 0) {                         // descending — set up the deflection
         var px = predictPaddleX();
-        var counts = colCounts();
         if (bricksLeft < aiPrevBricks) aiNoHit = 0; else aiNoHit++;   // track "nothing broke"
         aiPrevBricks = bricksLeft;
-        if (aiEdge === 0) aiEdge = (counts[0] <= counts[cols - 1]) ? -1 : 1;  // tunnel the lighter edge
 
         if (aiNoHit > AI_GIVEUP_FRAMES) {
-          // Hopelessly stuck (an orbit the un-stick couldn't break) — dodge to the
-          // far corner and let the ball drop. It costs a life, but re-serving with a
-          // fresh trajectory ALWAYS breaks the orbit, so the AI can never lock up.
+          // Hopelessly stuck (an orbit the perturbation couldn't break) — dodge aside
+          // and let the ball drop. It costs a life, but re-serving with a fresh
+          // trajectory ALWAYS breaks the orbit, so the AI can never lock up.
           target = ball.x < W / 2 ? W - half : half;
-          target = clamp(target, half, W - half);
-          paddle.cx = clamp(paddle.cx + clamp(target - paddle.cx, -W * AI_PADDLE_SPEED * edt, W * AI_PADDLE_SPEED * edt), half, W - half);
-          return;
-        }
-
-        var rel;
-        if (bricksLeft <= cols || bricksLeft <= fullWall * 0.5) {
-          // Second half / final stragglers: clear efficiently by nearest brick.
-          rel = clamp((nearestBrickX(px) - px) / (W * 0.5), -0.6, 0.6);
-        } else if (aiNoHit > AI_FALLBACK_FRAMES) {
-          // Loose in a cleared pocket — aim straight at the nearest brick (with a
-          // little perturbation) to get back on target and break any stable orbit.
-          rel = clamp((nearestBrickX(px) - px) / (W * 0.5), -0.7, 0.7) + 0.25 * Math.sin(Math.floor(aiNoHit / 35) * 2.3);
-          rel = clamp(rel, -0.85, 0.85);
         } else {
-          // BANK OFF THE SIDE WALL: aim the ball up the side gap on the chosen edge
-          // so it ricochets off the wall, rises into the space above the bricks, and
-          // rakes the tops — using the wall clears far faster than picking bricks off
-          // one at a time. (The half-brick side gap gives it a clear lane up.) When
-          // the ball is already on that side, the dead-vertical guard below turns it
-          // back up-and-across into the bricks, so the two alternate into a rake.
-          var sideX = aiEdge < 0 ? ball.r * 1.5 : W - ball.r * 1.5;
-          rel = clamp((sideX - px) / (W * 0.5), -0.85, 0.85);
+          // Aim the rebound at the nearest standing brick — keep the ball in the wall
+          // breaking bricks every trip instead of nursing it off to a corner.
+          var rel = clamp((nearestBrickX(px) - px) / (W * 0.5), -0.9, 0.9);
+          if (aiNoHit > AI_FALLBACK_FRAMES) {    // loose in a cleared pocket — break the orbit
+            rel += 0.3 * Math.sin(Math.floor(aiNoHit / 30) * 2.3);
+            rel = clamp(rel, -0.95, 0.95);
+          }
+          // Ban dead-vertical returns (a near-zero offset just bounces up and down,
+          // wasting time): force a minimum sideways angle, pointed at the bulk of the
+          // remaining bricks, so the ball always plays forward.
+          if (Math.abs(rel) < AI_MIN_REL) rel = (brickCentroidX() >= px ? 1 : -1) * AI_MIN_REL;
+          target = px - rel * half;
         }
-        // Ban dead-vertical returns: a near-zero offset sends the ball straight up,
-        // and it just bounces up and down wasting time. Force at least a minimum
-        // sideways angle, pointed at the bulk of the remaining bricks, so the AI
-        // always plays forward.
-        if (Math.abs(rel) < AI_MIN_REL) rel = (brickCentroidX() >= px ? 1 : -1) * AI_MIN_REL;
-        target = px - rel * half;
       } else {
-        target = ball.x;                         // rising — stay under it for the return
+        target = paddle.cx;                      // rising — hold; chasing the ball is pointless
       }
       target = clamp(target, half, W - half);
       var maxV = W * AI_PADDLE_SPEED * edt;
