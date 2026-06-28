@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>Gomoku — Nostalgic Arcade</title>
+  <style>
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: #000;
+      overflow: hidden;
+      overscroll-behavior: none;
+      touch-action: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    /* The canvas fills the viewport; the square board is letterboxed inside it
+       (largest centred square at every orientation, so cells stay square). */
+    #game {
+      display: block;
+      background: #000;
+    }
+    .chrome {
+      position: fixed;
+      top: max(10px, env(safe-area-inset-top));
+      min-height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 7px 18px;
+      color: #4dff88;
+      font: bold 13px "Courier New", monospace;
+      letter-spacing: 0.16em;
+      text-decoration: none;
+      border: 1px solid #1d5e38;
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 10;
+      transition: background 0.15s ease;
+    }
+    #finish { left: 50%; transform: translateX(-50%); }
+    #undo { right: max(10px, env(safe-area-inset-right)); display: none; }
+    .chrome:active { background: rgba(77, 255, 136, 0.18); }
+    /* Gomoku is a slow, deliberate game — chrome (FINISH / UNDO) stays visible
+       throughout so a player can always back out or take a move back; it is not
+       hidden during play the way the arcade titles hide it. */
+  </style>
+</head>
+<body>
+  <a id="finish" class="chrome" href="../../index.html">FINISH</a>
+  <button id="undo" class="chrome" type="button">UNDO</button>
+  <canvas id="game"></canvas>
+
+  <script src="../../shared/ng.js"></script>
+  <script src="../../shared/touch.js"></script>
+  <script src="gomoku.js"></script>
+  <!-- FINISH is wired inside gomoku.js: it backs out to the mode menu from a
+       game, and to the catalogue from the menu (button + ESC / BACK / HOME). -->
+</body>
+</html>
