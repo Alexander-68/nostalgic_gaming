@@ -8,6 +8,9 @@ touch-only, and playable at all three design ratios — 16:9, 9:8, 9:16).
 |------|-------|---------|-------|
 | Space Invaders | Fixed shooter (PvE) | 1 | First shooter. Drag-to-move + tap/auto fire. Grid scales to width. |
 | Missile Command | Tap-to-intercept defense | 1 | Purest multitouch showcase — the whole game is tapping the sky. |
+| Sudoku | Logic grid puzzle | 1 | Best quiet puzzle fit. Tap a cell, tap a digit; square board letterboxes cleanly and needs no animation engine. |
+| Frogger | Lane-crossing action | 1 | Swipe/tap lane movement. Rows scale naturally, and hazards are simple sprites with strong arcade recognition. |
+| Minesweeper | Deduction grid puzzle | 1 | Touch-friendly classic: tap to reveal, flag mode toggle for mines. Board size can adapt per ratio/difficulty. |
 | Pac-Man | Maze chase | 1 vs AI | Highest recognition + real opponent AI, but the fixed maze is the hardest layout to fit across all three ratios. |
 | Pinball | Physics table | 1–2 hot-seat | Best touch/multitouch story, but highest effort (custom physics) and worst landscape fit. Flagship/centerpiece, not a quick win. |
 
@@ -30,6 +33,40 @@ interceptor; under a heavy raid with multiple bases you field several fingers at
 once. A "defend the bottom edge" layout, so it's trivially correct at 16:9, 9:8
 and 9:16 with no reflow. Great fit for the CRT-vector aesthetic and the
 "visible cause" principle — every explosion comes from a real interceptor arc.
+
+### Sudoku — logic grid puzzle
+The cleanest non-arcade addition: a 9×9 square grid, a compact digit pad, and no
+physics or animation requirement. Tap a cell to focus it, tap a digit to enter a
+candidate or final value, and use a mode toggle for notes. The square board can
+use `NG.fit` and letterbox at every ratio; landscape gets side panels for digits,
+timer, mistakes and difficulty, while portrait puts the keypad below the board.
+
+Implementation work is mostly puzzle generation/validation and touch UX polish:
+generate a complete solved grid, remove clues to a chosen difficulty, enforce a
+single solution, and keep hints/undo optional so the baseline game stays small.
+
+### Frogger — lane-crossing action
+A strong arcade fit that avoids the fixed-maze problem. The level is a stack of
+horizontal lanes: road traffic, safe medians, river logs/turtles, and goal slots.
+Input is simple and touch-native — swipe or tap a direction to hop one tile. In
+landscape, lanes can be wider with bigger horizontal travel; in portrait, the
+same number of lanes remain readable because the frog advances vertically.
+
+The main risk is tuning density and speed so it feels fair on all ratios, but the
+technical model is modest: repeated lane objects moving at constant speeds, grid
+snapping for the frog, collision with cars, and carried motion on logs.
+
+### Minesweeper — deduction grid puzzle
+Classic, compact, and ideal for touch screens as long as flagging is explicit.
+Use tap-to-reveal with a visible flag/reveal segmented control, avoiding hidden
+long-press timing as the only way to mark a mine. The grid can scale by
+difficulty (for example 9×9, 16×16, or a custom ratio-aware board) and letterbox
+inside the remaining HUD/keypad space.
+
+The implementation is small compared with action games: mine placement after the
+first tap, flood-fill reveals, number rendering, flags, win/loss state and a
+restart face/button. It also gives the catalogue another quiet puzzle next to
+Sudoku without needing AI.
 
 ### Pac-Man — maze chase (runner-up)
 Highest brand recognition of the lot and gives genuine opponent AI (four ghosts
