@@ -69,10 +69,14 @@
   var AI_FALLBACK_FRAMES = 35;   // AI: frames with no brick broken before it perturbs its aim to break an orbit
   var AI_GIVEUP_FRAMES = 550;    // AI: ...and (rare last resort) before it drops the ball to reset (can't lock)
   var AI_MIN_REL = 0.24;         // AI: minimum paddle contact offset — never returns the ball near-vertical
+  var RENDER_DPR_MAX = 1.5;      // Android WebView gets expensive at 3x; cap pixels for smooth motion
 
   NG.ready(function () {
     var canvas = document.getElementById('game');
     var ctx = canvas.getContext('2d');
+    var brickCanvas = document.createElement('canvas');
+    var brickCtx = brickCanvas.getContext('2d');
+    var brickLayerDirty = true;
 
     // ---- layout (recomputed on every resize / orientation change) ----------
     var W = 0, H = 0;                 // viewport size in CSS px
@@ -107,7 +111,7 @@
 
     // ---- layout ------------------------------------------------------------
     function layout(info) {
-      var dpr = window.devicePixelRatio || 1;
+      var dpr = Math.min(window.devicePixelRatio || 1, RENDER_DPR_MAX);
       W = info.width;
       H = info.height;
       unit = Math.min(W, H);
@@ -115,7 +119,10 @@
       canvas.style.height = H + 'px';
       canvas.width = Math.round(W * dpr);
       canvas.height = Math.round(H * dpr);
+      brickCanvas.width = canvas.width;
+      brickCanvas.height = canvas.height;
       drawScale = dpr;
+      brickLayerDirty = true;
 
       // Paddle: a fixed fraction of WIDTH (the axis it slides along) so the
       // horizontal challenge is the same at every ratio; it sits just above the
@@ -181,6 +188,7 @@
         }
       }
       bricksLeft = rows * cols;
+      brickLayerDirty = true;
     }
     // Collision uses the full, contiguous cell (bricks touch, so the ball can't
     // thread the visual gaps); drawing insets the cell for the gridded look.
@@ -399,6 +407,7 @@
         b.alive = false;
         bricksLeft--;
         score += b.points;
+        brickLayerDirty = true;
 
         // Reflect off the face the ball came in through: if the ball is within
         // the brick's x-span it struck the top/bottom (flip vy); within the
@@ -469,15 +478,19 @@
     }
 
     // ---- drawing -----------------------------------------------------------
-    function rrect(px, py, w, h, r) {
+    function rrectTo(c, px, py, w, h, r) {
       r = Math.min(r, w / 2, h / 2);
-      ctx.beginPath();
-      ctx.moveTo(px + r, py);
-      ctx.arcTo(px + w, py, px + w, py + h, r);
-      ctx.arcTo(px + w, py + h, px, py + h, r);
-      ctx.arcTo(px, py + h, px, py, r);
-      ctx.arcTo(px, py, px + w, py, r);
-      ctx.closePath();
+      c.beginPath();
+      c.moveTo(px + r, py);
+      c.arcTo(px + w, py, px + w, py + h, r);
+      c.arcTo(px + w, py + h, px, py + h, r);
+      c.arcTo(px, py + h, px, py, r);
+      c.arcTo(px, py, px + w, py, r);
+      c.closePath();
+    }
+
+    function rrect(px, py, w, h, r) {
+      rrectTo(ctx, px, py, w, h, r);
     }
 
     function drawFrame() {
@@ -551,18 +564,28 @@
     }
 
     function drawBricks() {
+      if (!brickLayerDirty) {
+        ctx.drawImage(brickCanvas, 0, 0, W, H);
+        return;
+      }
+
+      brickCtx.setTransform(1, 0, 0, 1, 0, 0);
+      brickCtx.clearRect(0, 0, brickCanvas.width, brickCanvas.height);
+      brickCtx.setTransform(drawScale, 0, 0, drawScale, 0, 0);
       var ix = Math.max(1, cellW * 0.07), iy = Math.max(1, cellH * 0.14);
       for (var i = 0; i < bricks.length; i++) {
         var b = bricks[i];
         if (!b.alive) continue;
         var rc = cellRect(b);
-        ctx.fillStyle = b.color;
-        ctx.shadowColor = b.color;
-        ctx.shadowBlur = cellH * 0.35;
-        rrect(rc.x + ix, rc.y + iy, rc.w - 2 * ix, rc.h - 2 * iy, cellH * 0.18);
-        ctx.fill();
+        brickCtx.fillStyle = b.color;
+        brickCtx.shadowColor = b.color;
+        brickCtx.shadowBlur = cellH * 0.35;
+        rrectTo(brickCtx, rc.x + ix, rc.y + iy, rc.w - 2 * ix, rc.h - 2 * iy, cellH * 0.18);
+        brickCtx.fill();
       }
-      ctx.shadowBlur = 0;
+      brickCtx.shadowBlur = 0;
+      brickLayerDirty = false;
+      ctx.drawImage(brickCanvas, 0, 0, W, H);
     }
 
     function drawPaddle() {
