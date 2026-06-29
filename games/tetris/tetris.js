@@ -1086,7 +1086,7 @@
       ctx.save();
       // title
       ctx.fillStyle = FG; ctx.shadowColor = FG; ctx.shadowBlur = unit * 0.03;
-      label('TETRIS', cx, vh * 0.26, unit * 0.16, FG, 'center', 'middle');
+      label('TETRA DROP', cx, vh * 0.26, unit * 0.16, FG, 'center', 'middle');
       ctx.shadowBlur = 0;
       label('FALLING BLOCKS · TOUCH ONLY', cx, vh * 0.36, unit * 0.03, MUTED, 'center', 'middle');
       var mb = menuButtons();
