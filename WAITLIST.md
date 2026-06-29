@@ -10,7 +10,6 @@ touch-only, and playable at all three design ratios — 16:9, 9:8, 9:16).
 | Missile Command | Tap-to-intercept defense | 1 | Purest multitouch showcase — the whole game is tapping the sky. |
 | Sudoku | Logic grid puzzle | 1 | Best quiet puzzle fit. Tap a cell, tap a digit; square board letterboxes cleanly and needs no animation engine. |
 | Frogger | Lane-crossing action | 1 | Swipe/tap lane movement. Rows scale naturally, and hazards are simple sprites with strong arcade recognition. |
-| Minesweeper | Deduction grid puzzle | 1 | Touch-friendly classic: tap to reveal, flag mode toggle for mines. Board size can adapt per ratio/difficulty. |
 | Pac-Man | Maze chase | 1 vs AI | Highest recognition + real opponent AI, but the fixed maze is the hardest layout to fit across all three ratios. |
 | Pinball | Physics table | 1–2 hot-seat | Best touch/multitouch story, but highest effort (custom physics) and worst landscape fit. Flagship/centerpiece, not a quick win. |
 
@@ -55,18 +54,6 @@ same number of lanes remain readable because the frog advances vertically.
 The main risk is tuning density and speed so it feels fair on all ratios, but the
 technical model is modest: repeated lane objects moving at constant speeds, grid
 snapping for the frog, collision with cars, and carried motion on logs.
-
-### Minesweeper — deduction grid puzzle
-Classic, compact, and ideal for touch screens as long as flagging is explicit.
-Use tap-to-reveal with a visible flag/reveal segmented control, avoiding hidden
-long-press timing as the only way to mark a mine. The grid can scale by
-difficulty (for example 9×9, 16×16, or a custom ratio-aware board) and letterbox
-inside the remaining HUD/keypad space.
-
-The implementation is small compared with action games: mine placement after the
-first tap, flood-fill reveals, number rendering, flags, win/loss state and a
-restart face/button. It also gives the catalogue another quiet puzzle next to
-Sudoku without needing AI.
 
 ### Pac-Man — maze chase (runner-up)
 Highest brand recognition of the lot and gives genuine opponent AI (four ghosts
@@ -131,3 +118,12 @@ weekend game.
   Computer targets Tetris (4-line clears) when the board is clean and low, and
   always soft-drops (no hard-slam) when facing a human opponent. Robot icons toggle
   each well between YOU and COMPUTER.
+
+- **Minesweeper** — built in `games/minesweeper/`. Single-player deduction grid
+  on a maximised square field that letterboxes at all three ratios (side panels in
+  landscape, top/bottom bands in portrait). A big DIG/FLAG segmented toggle drives
+  taps, with hold-to-flag as a shortcut and chord-on-number for fast sweeps; first
+  dig is always safe (mines dealt afterward, clear of the tap + neighbours).
+  Flood-fill reveals, classic-coloured numbers, mine + timer readouts, three
+  difficulty sizes (9×9/10, 13×13/28, 16×16/51) and tap-to-restart. The board
+  engine is pure and unit-tested headlessly under Node (`module.exports`).

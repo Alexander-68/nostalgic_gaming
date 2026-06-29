@@ -307,6 +307,57 @@
       </div>
     </a>
 
+    <a class="card playable" href="games/minesweeper/index.html">
+      <svg class="art" viewBox="0 0 160 90" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Minesweeper">
+        <rect width="160" height="90" fill="#000"/>
+        <!-- a patch of minefield: revealed numbers, a flag, and a freshly hit mine -->
+        <g>
+          <!-- revealed (sunken) cells with classic-coloured numbers -->
+          <rect x="40"  y="17" width="16" height="16" rx="2" fill="#08120b"/>
+          <rect x="58"  y="17" width="16" height="16" rx="2" fill="#08120b"/>
+          <rect x="76"  y="17" width="16" height="16" rx="2" fill="#08120b"/>
+          <text x="48" y="29" fill="#5b8cff" font-family="monospace" font-size="12" font-weight="bold" text-anchor="middle">1</text>
+          <text x="66" y="29" fill="#4dff88" font-family="monospace" font-size="12" font-weight="bold" text-anchor="middle">2</text>
+          <text x="84" y="29" fill="#ff5d6c" font-family="monospace" font-size="12" font-weight="bold" text-anchor="middle">3</text>
+
+          <!-- raised (unrevealed) cells -->
+          <rect x="94"  y="17" width="16" height="16" rx="2" fill="#13351f"/>
+          <rect x="40"  y="35" width="16" height="16" rx="2" fill="#13351f"/>
+          <rect x="76"  y="35" width="16" height="16" rx="2" fill="#13351f"/>
+          <rect x="94"  y="35" width="16" height="16" rx="2" fill="#13351f"/>
+          <rect x="58"  y="53" width="16" height="16" rx="2" fill="#13351f"/>
+          <rect x="94"  y="53" width="16" height="16" rx="2" fill="#13351f"/>
+
+          <!-- flagged cell -->
+          <rect x="58"  y="35" width="16" height="16" rx="2" fill="#13351f"/>
+          <line x1="64" y1="48" x2="68" y2="48" stroke="#d6f7e4" stroke-width="1.4" stroke-linecap="round"/>
+          <line x1="65.5" y1="48" x2="65.5" y2="39" stroke="#d6f7e4" stroke-width="1.4" stroke-linecap="round"/>
+          <path d="M65.5 39 L72 41 L65.5 43 Z" fill="#ff5d6c"/>
+
+          <!-- detonated mine -->
+          <rect x="76"  y="53" width="16" height="16" rx="2" fill="#3a1116"/>
+          <g stroke="#ff5d6c" stroke-width="1.4" stroke-linecap="round">
+            <line x1="84" y1="61" x2="84" y2="55.5"/><line x1="84" y1="61" x2="84" y2="66.5"/>
+            <line x1="84" y1="61" x2="78.5" y2="61"/><line x1="84" y1="61" x2="89.5" y2="61"/>
+            <line x1="84" y1="61" x2="80.2" y2="57.2"/><line x1="84" y1="61" x2="87.8" y2="64.8"/>
+            <line x1="84" y1="61" x2="80.2" y2="64.8"/><line x1="84" y1="61" x2="87.8" y2="57.2"/>
+          </g>
+          <circle cx="84" cy="61" r="3.4" fill="#ff5d6c"/>
+          <circle cx="82.9" cy="59.9" r="1" fill="#ffd2d6"/>
+        </g>
+      </svg>
+      <div class="meta">
+        <h2>MINESWEEPER</h2>
+        <p>Clear the minefield by reading the numbers &mdash; each says how many mines it touches. Tap to dig, hold to flag, and tap a number to sweep its neighbours. First dig is always safe.</p>
+        <div class="tags">
+          <span class="tag">1 PLAYER</span>
+          <span class="tag">3 LEVELS</span>
+          <span class="tag">TOUCH</span>
+          <span class="tag">16:9 &middot; 9:8 &middot; 9:16</span>
+        </div>
+      </div>
+    </a>
+
     <div class="card soon" aria-disabled="true">
       <div class="art">?</div>
       <div class="meta">

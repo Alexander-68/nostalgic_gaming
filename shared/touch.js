@@ -63,6 +63,9 @@
 
     function onDown(ev) {
       if (options.ignoreMouse && ev.pointerType === 'mouse') return;
+      // Only the primary mouse button drives a touch point; right/middle clicks
+      // are left for the game to use (e.g. right-click to flag in Minesweeper).
+      if (ev.pointerType === 'mouse' && ev.button > 0) return;
       if (count >= maxPoints || points[ev.pointerId]) return;
       var c = coords(ev);
       var p = {

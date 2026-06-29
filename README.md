@@ -91,3 +91,20 @@ Stack the falling tetrominoes and complete full rows to clear them. Every row yo
 The HUD shows the HOLD slot and the next three pieces in the queue. A ghost piece shows exactly where the current piece will land.
 
 **Robot icons** toggle each well between player and computer. The computer plays toward Tetris (four-line clears) when the board is clean, and soft-drops — never hard-slams — when facing a human player.
+
+---
+
+### 💣 Minesweeper
+
+Clear the minefield without setting off a mine. Every revealed number tells you how many of its eight neighbours are mines — read the numbers, deduce where the mines hide, and uncover every safe cell to win.
+
+**Touch controls**
+- A big **DIG / FLAG** toggle picks what a tap does. **Tap** a cell to dig it (or flag it).
+- **Hold** any cell to flag it without switching modes.
+- **Tap a revealed number** whose flags already match its count to **chord** — open all its remaining neighbours at once. The fast way to sweep.
+
+**Always-safe start** — mines are dealt *after* your first dig, clear of the cell you tapped and its neighbours, so you always open into a region and never lose on move one.
+
+**With a mouse** — left-click digs (or flags, per the toggle); **right-click flags** a cell directly, the classic desktop way.
+
+**Three sizes** — tap the difficulty chip to cycle **EASY** (9×9, 10 mines), **MED** (13×13, 28) and **HARD** (16×16, 51). The mine counter and timer track your run; **NEW** deals a fresh field.
