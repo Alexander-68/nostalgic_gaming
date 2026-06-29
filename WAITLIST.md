@@ -6,7 +6,6 @@ touch-only, and playable at all three design ratios — 16:9, 9:8, 9:16).
 
 | Game | Style | Players | Notes |
 |------|-------|---------|-------|
-| Tetris | Falling-block puzzle | 1 (2P versus later) | Biggest genre gap. Portrait-native; well reshapes per orientation. |
 | Space Invaders | Fixed shooter (PvE) | 1 | First shooter. Drag-to-move + tap/auto fire. Grid scales to width. |
 | Missile Command | Tap-to-intercept defense | 1 | Purest multitouch showcase — the whole game is tapping the sky. |
 | Pac-Man | Maze chase | 1 vs AI | Highest recognition + real opponent AI, but the fixed maze is the hardest layout to fit across all three ratios. |
@@ -16,14 +15,6 @@ Add the next idea here as a row (and a section below if it needs detail), then
 promote it into `/games/<name>/` and link it from `/index.html` once built.
 
 ## Details
-
-### Tetris — falling-block puzzle
-The single most iconic missing game and a whole new genre. Swipe left/right to
-move, tap to rotate, swipe-down/flick to soft/hard drop — fully touch-native, no
-buttons. The well is naturally tall, so **9:16 is home turf**; in 16:9 flank the
-well with next/hold/score panels, in 9:8 a narrower well. Reshapes per
-orientation like Pong's paddles. Later: same-device 2-player versus (clear lines
-→ send garbage) to exercise multitouch.
 
 ### Space Invaders — fixed shooter
 Fills the missing shooter genre and the missing pure-PvE game (no opponent AI —
@@ -94,3 +85,12 @@ weekend game.
   tap placement, win-line highlight, undo, tap-to-restart. The board is maximised
   (full height in landscape) with chrome in the leftover space; it letterboxes to
   the largest centred square at all three ratios.
+
+- **Tetris** — built in `games/tetris/`. Solo, VS computer, and same-device
+  2-player versus (clear lines → send garbage). Touch controls: drag=move,
+  tap=rotate, flick-down=hard-drop, swipe-up=hold; ghost piece; HOLD slot; 3-deep
+  NEXT queue; 7-bag randomiser. Fixed-ratio letterbox layout — 9:16 is home turf;
+  16:9 flanks the well(s) with score/NEXT/HOLD panels; 9:8 uses a narrower well.
+  Computer targets Tetris (4-line clears) when the board is clean and low, and
+  always soft-drops (no hard-slam) when facing a human opponent. Robot icons toggle
+  each well between YOU and COMPUTER.
