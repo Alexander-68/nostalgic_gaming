@@ -296,6 +296,8 @@
     var CLEAR_TIME = 0.18;         // s the line-clear flash plays before collapsing
     var AI_STEP = 0.06;            // s between the computer's visible micro-moves
     var AI_HOLD_MARGIN = 0.4;      // how much better the held piece must score before the computer swaps
+    var AI_SOFT_INTERVAL = 0.08;   // vs a human: cap the computer's soft descent here (s/row) so it
+                                   // plays at a fair, beatable pace (~2s/piece) — never an instant slam
     var GARBAGE_FOR = [0, 0, 1, 2, 4];  // rows sent for clearing 1..4 lines
 
     function gravityInterval(level) { return Math.max(0.05, 0.8 * Math.pow(0.85, level - 1)); }
@@ -330,7 +332,7 @@
         gravity: 0, lockTimer: 0, locking: false, lockResets: 0, softDrop: false, keySoft: false,
         clearing: null,            // { rows:[...], t }
         pendingGarbage: 0, garbageFlash: 0,
-        ai: false, aiPlan: null, aiTimer: 0,
+        ai: false, aiPlan: null, aiTimer: 0, aiSoftFall: false,
         pieceCount: 0, holdCount: 0, tetrisCount: 0,   // stats (also used by tests)
       };
     }
@@ -429,7 +431,7 @@
       state = 'over';
       // Game's over: cancel every well's pending computer move so nothing keeps
       // "thinking"/playing after the result is decided.
-      for (var i = 0; i < wells.length; i++) { wells[i].aiPlan = null; wells[i].aiTimer = 0; }
+      for (var i = 0; i < wells.length; i++) { wells[i].aiPlan = null; wells[i].aiTimer = 0; wells[i].aiSoftFall = false; }
     }
 
     // ---- piece actions (shared by touch, keyboard and the computer) -------
@@ -494,18 +496,32 @@
       return curBest;
     }
 
+    // Hard drop is the computer's instant slam — no human can race it. So it is
+    // only used in solo autoplay and computer-vs-computer; against a person the
+    // computer SOFT-DROPS instead (no slamming), giving them a fair pace.
+    function aiHardDropAllowed(w) {
+      return numPlayers !== 2 || otherWell(w).ai;
+    }
+    // The terminal action once a piece is positioned: slam it (if allowed), else
+    // start a soft descent that gravity finishes and locks.
+    function aiCommit(w) {
+      if (aiHardDropAllowed(w)) { hardDrop(w); w.aiPlan = null; }
+      else { w.aiSoftFall = true; }
+    }
+
     function aiUpdate(w, dt) {
       if (state !== 'playing' || !piecePlayable(w)) return;   // never act once the game is over
-      if (!w.aiPlan) { w.aiPlan = aiDecide(w); w.aiTimer = 0; }
+      if (!w.aiPlan) { w.aiPlan = aiDecide(w); w.aiTimer = 0; w.aiSoftFall = false; }
+      if (w.aiSoftFall) return;                               // lined up: let the soft drop finish it
       w.aiTimer += dt;
       if (w.aiTimer < AI_STEP) return;
       if (w.aiPlan.hold) { holdSwap(w); w.aiPlan = null; return; }   // swap, then re-plan the new piece
       w.aiTimer = 0;
       var plan = w.aiPlan;
-      if (w.rot !== plan.rot) { if (!rotateWell(w, 1)) hardDrop(w); return; }   // line up the orientation
-      if (w.px < plan.px) { if (!moveWell(w, 1)) hardDrop(w); return; }          // then slide across
-      if (w.px > plan.px) { if (!moveWell(w, -1)) hardDrop(w); return; }
-      hardDrop(w); w.aiPlan = null;                                             // committed: slam it down
+      if (w.rot !== plan.rot) { if (!rotateWell(w, 1)) aiCommit(w); return; }   // line up the orientation
+      if (w.px < plan.px) { if (!moveWell(w, 1)) aiCommit(w); return; }          // then slide across
+      if (w.px > plan.px) { if (!moveWell(w, -1)) aiCommit(w); return; }
+      aiCommit(w);                                            // positioned: slam, or soft-drop vs a human
     }
 
     // ---- per-frame update -------------------------------------------------
@@ -528,6 +544,7 @@
       if (!piecePlayable(w)) return;                 // AI may have locked the piece
 
       var interval = w.softDrop ? gravityInterval(w.level) / SOFT_MULT : gravityInterval(w.level);
+      if (w.aiSoftFall && interval > AI_SOFT_INTERVAL) interval = AI_SOFT_INTERVAL;   // brisk, level-independent
       w.gravity += dt;
       while (w.gravity >= interval) {
         w.gravity -= interval;
@@ -551,7 +568,9 @@
         var p = ptrs[id];
         if (p.soft && wells[p.well] && !wells[p.well].ai) wells[p.well].softDrop = true;
       }
-      for (i = 0; i < wells.length; i++) { if (wells[i].ai) wells[i].softDrop = false; updateWell(wells[i], dt); }
+      // a computer well drives its own descent: soft drop only when it is letting
+      // a positioned piece fall (vs a human); otherwise normal gravity.
+      for (i = 0; i < wells.length; i++) { if (wells[i].ai) wells[i].softDrop = !!wells[i].aiSoftFall; updateWell(wells[i], dt); }
     }
 
     // ---- flow -------------------------------------------------------------
