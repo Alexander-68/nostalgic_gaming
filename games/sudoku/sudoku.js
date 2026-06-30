@@ -549,19 +549,18 @@
       var isErr   = !!conflicts[cellIdx];
       var cx = boardLeft + c*cs, cy = boardTop + r*cs;
 
-      // Background: selected > related (same row/col/box) > same-digit highlight > base.
+      // Background priority:
+      //   selected cell  → bright highlight
+      //   digit selected → same digit: bright; all others: darkened
+      //   no digit sel   → selected cell only; all others at base
       var bg;
       if (isSel) {
-        bg = '#1c3a28';
-      } else if (selected) {
-        var selBr = ((selected.r/3)|0), selBc = ((selected.c/3)|0);
-        var myBr  = ((r/3)|0),          myBc  = ((c/3)|0);
-        if (selected.r === r || selected.c === c || (selBr===myBr && selBc===myBc)) {
-          bg = '#0c1c14';
-        }
-        if (selNum && v === selNum) bg = '#172e1e';
+        bg = '#1e3f2c';
+      } else if (selNum) {
+        bg = (v === selNum) ? '#1a3824' : '#060d08';
+      } else {
+        bg = given ? '#0d1e16' : PANEL;
       }
-      if (!bg) bg = given ? '#0d1e16' : PANEL;
 
       ctx.fillStyle = bg;
       ctx.fillRect(cx, cy, cs, cs);
