@@ -6,6 +6,10 @@ touch-only, and playable at all three design ratios — 16:9, 9:8, 9:16).
 
 | Game | Style | Players | Notes |
 |------|-------|---------|-------|
+| 2048 | Merge-tile puzzle | 1 | Swipe to slide; matching tiles merge. 4×4 grid, pure touch, trivial state. Highest fun-per-line-of-code ratio. |
+| Reversi / Othello | Strategic board game | 1–2 / vs AI | 8×8 square grid — same letterbox layout as Gomoku. Flip discs, classic AI (minimax + positional score). |
+| Connect Four | Drop-disc strategy | 1–2 / vs AI | Tap a column to drop; first to four in a row wins. Landscape-native 7×6 grid; simple gravity + look-ahead AI. |
+| Bejeweled | Match-3 puzzle | 1 | Swap adjacent gems to make rows/cols of 3+. Cascades, combos, score-chase. Square grid scales to all ratios. |
 | Space Invaders | Fixed shooter (PvE) | 1 | First shooter. Drag-to-move + tap/auto fire. Grid scales to width. |
 | Frogger | Lane-crossing action | 1 | Swipe/tap lane movement. Rows scale naturally, and hazards are simple sprites with strong arcade recognition. |
 | Pac-Man | Maze chase | 1 vs AI | Highest recognition + real opponent AI, but the fixed maze is the hardest layout to fit across all three ratios. |
@@ -15,6 +19,32 @@ Add the next idea here as a row (and a section below if it needs detail), then
 promote it into `/games/<name>/` and link it from `/index.html` once built.
 
 ## Details
+
+### 2048 — merge-tile puzzle
+Swipe in any of four directions to slide all tiles simultaneously; two tiles of the same value that collide merge into one. Reach 2048 to win, keep going for the high score.
+
+The state is a 4×4 grid of integers — trivially small. No animation engine is needed (tiles can snap to position). The square grid letterboxes cleanly at all three ratios; chrome (score, best score, NEW) fits above or beside the board. Input is four swipe directions, detected as the dominant axis of any drag gesture — one of the cleanest touch models in the catalogue.
+
+The only subtlety is the merge rule (each tile merges at most once per swipe) and spawning a random 2 or 4 in an empty cell after every valid move.
+
+### Reversi / Othello — strategic board game
+Place a disc; every opponent disc trapped in a straight line between your new disc and another of yours flips to your colour. Most discs when the board fills wins.
+
+The 8×8 grid is a perfect fit for the square-letterbox layout already used by Gomoku and Sudoku. Chrome (score, robot toggles, NEW) goes in the side panels (landscape) or top/bottom bands (portrait). AI is minimax with a standard positional weight matrix (corners > edges > interior) and a depth of 4–6 half-moves — strong enough to be a challenge, cheap enough to run synchronously.
+
+Two robot icons (same convention as Gomoku and Tetris) give solo vs. AI, pass-and-play, and computer-vs-computer on the same board.
+
+### Connect Four — drop-disc strategy
+Tap a column to drop a disc to the lowest empty row; first to four in a row — horizontal, vertical, or diagonal — wins. A simple, satisfying mechanic with no hidden state.
+
+The 7×6 grid is wider than tall, making it landscape-native. In portrait, rotate the board concept 90° (drop from the left side, discs fall rightward) or simply let the grid scale down — both work. AI is a look-ahead on open threes and fours, threat-blocking first, then scoring, similar to the Gomoku AI. Two-player hot-seat (same screen) is free from the single-column-tap input.
+
+### Bejeweled — match-3 puzzle
+Swap two adjacent gems to make a horizontal or vertical run of three or more matching colours; matched gems vanish and the board cascades as gems fall to fill the gap. Chain reactions score multipliers; the goal is score-chasing before no valid swaps remain.
+
+The square gem grid (8×8 is classic) fits the same letterbox pattern as the other square-board games. Touch input is a short drag from one gem toward its neighbour — direction snaps to the nearest axis. The trickiest part is the cascade engine: after each removal, fall-fill, check for new matches, repeat until the board stabilises. No animation is required beyond colour fills, but smooth falling adds a lot of feel for modest extra code.
+
+Variants to consider: timed mode (beat the clock), or a level-based mode with a gem-clear quota. Either gives a natural difficulty progression without procedural level design.
 
 ### Space Invaders — fixed shooter
 Fills the missing shooter genre and the missing pure-PvE game (no opponent AI —
