@@ -194,6 +194,7 @@
     var gameState = 'play';    // 'play' | 'won'
     var fillMode = 'fill';     // 'fill' | 'notes'
     var conflicts = {};
+    var highlightNum = 0;      // digit highlighted across the board (0 = none)
     var timerStarted = false, startClock = 0, finalTime = 0;
 
     function makeNotes() {
@@ -212,9 +213,10 @@
       board    = puzzle.slice();
       notes    = makeNotes();
       selected = null;
-      gameState = 'play';
-      fillMode  = 'fill';
-      conflicts = {};
+      gameState    = 'play';
+      fillMode     = 'fill';
+      conflicts    = {};
+      highlightNum = 0;
       timerStarted = false;
       startClock = clock;
       finalTime  = 0;
@@ -442,7 +444,10 @@
         }
         for (k = 0; k < cl.numPad.length; k++) {
           if (inSq(pt.x, pt.y, cl.numPad[k])) {
-            if (selected) fillCell(selected.r, selected.c, cl.numPad[k].n);
+            var n = cl.numPad[k].n;
+            if (selected) fillCell(selected.r, selected.c, n);
+            // Toggle highlight: tap same digit again to clear.
+            highlightNum = (highlightNum === n) ? 0 : n;
             return;
           }
         }
@@ -453,6 +458,9 @@
             selected = null; // tap same cell to deselect
           } else {
             selected = cell;
+            // When tapping a filled cell, highlight that digit across the board.
+            var cellVal = board[cell.r*9+cell.c];
+            if (cellVal) highlightNum = cellVal;
           }
         }
       }
@@ -477,7 +485,10 @@
       if (k === 'arrowright') { ev.preventDefault(); selected = { r: selected.r, c: Math.min(8, selected.c+1) }; return; }
       if (k === 'backspace' || k === 'delete' || k === '0') { eraseCell(selected.r, selected.c); return; }
       var num = parseInt(k, 10);
-      if (num >= 1 && num <= 9) fillCell(selected.r, selected.c, num);
+      if (num >= 1 && num <= 9) {
+        fillCell(selected.r, selected.c, num);
+        highlightNum = (highlightNum === num) ? 0 : num;
+      }
     });
 
     NG.onExit(goFinish);
@@ -515,8 +526,7 @@
       ctx.fillRect(boardLeft, boardTop, S, S);
 
       // Per-cell backgrounds and digits / notes.
-      var selNum = (selected && board[selected.r*9+selected.c]) ? board[selected.r*9+selected.c] : 0;
-      for (r = 0; r < 9; r++) for (c = 0; c < 9; c++) drawCell(r, c, selNum);
+      for (r = 0; r < 9; r++) for (c = 0; c < 9; c++) drawCell(r, c);
 
       // Thin grid lines within boxes.
       ctx.lineWidth  = Math.max(0.5, cs*0.02);
@@ -541,7 +551,7 @@
       ctx.strokeRect(boardLeft, boardTop, S, S);
     }
 
-    function drawCell(r, c, selNum) {
+    function drawCell(r, c) {
       var cellIdx = r*9+c;
       var v       = board[cellIdx];
       var given   = isGiven(r, c);
@@ -556,8 +566,8 @@
       var bg;
       if (isSel) {
         bg = '#1e3f2c';
-      } else if (selNum) {
-        bg = (v === selNum) ? '#1a3824' : '#060d08';
+      } else if (highlightNum && v === highlightNum) {
+        bg = '#1a3824';
       } else {
         bg = '#000';
       }
@@ -608,12 +618,11 @@
       var notesOn = fillMode === 'notes';
       drawButton(cl.modeBtn, notesOn ? 'NOTES' : 'FILL', notesOn ? AMBER : FG, notesOn);
 
-      // Number pad buttons.
-      var selNum = (selected && board[selected.r*9+selected.c]) ? board[selected.r*9+selected.c] : 0;
+      // Number pad buttons — active when their digit matches highlightNum.
       var k, nb, active;
       for (k = 0; k < cl.numPad.length; k++) {
         nb = cl.numPad[k];
-        active = (nb.n === selNum);
+        active = (nb.n === highlightNum);
         ctx.lineWidth   = active ? 2 : 1;
         ctx.strokeStyle = active ? FG : DIM;
         ctx.fillStyle   = active ? 'rgba(77,255,136,0.12)' : 'rgba(0,0,0,0.35)';
