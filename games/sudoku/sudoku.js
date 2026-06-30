@@ -446,8 +446,7 @@
           if (inSq(pt.x, pt.y, cl.numPad[k])) {
             var n = cl.numPad[k].n;
             if (selected) fillCell(selected.r, selected.c, n);
-            // Toggle highlight: tap same digit again to clear.
-            highlightNum = (highlightNum === n) ? 0 : n;
+            highlightNum = n; // always keep the filled digit highlighted
             return;
           }
         }
@@ -487,7 +486,7 @@
       var num = parseInt(k, 10);
       if (num >= 1 && num <= 9) {
         fillCell(selected.r, selected.c, num);
-        highlightNum = (highlightNum === num) ? 0 : num;
+        highlightNum = num;
       }
     });
 
@@ -606,6 +605,13 @@
       }
     }
 
+    // True when all 9 correct instances of `n` are on the board.
+    function isDigitComplete(n) {
+      var count = 0, i;
+      for (i = 0; i < 81; i++) if (board[i] === n && solution[i] === n) count++;
+      return count === 9;
+    }
+
     function drawChrome(cl) {
       var t  = elapsed();
       var ts = Math.floor(t/60) + ':' + ('0'+(t%60)).slice(-2);
@@ -618,20 +624,23 @@
       var notesOn = fillMode === 'notes';
       drawButton(cl.modeBtn, notesOn ? 'NOTES' : 'FILL', notesOn ? AMBER : FG, notesOn);
 
-      // Number pad buttons — active when their digit matches highlightNum.
-      var k, nb, active;
+      // Number pad buttons — active when highlighted, greyed when all 9 placed.
+      var k, nb, active, done;
       for (k = 0; k < cl.numPad.length; k++) {
-        nb = cl.numPad[k];
-        active = (nb.n === highlightNum);
-        ctx.lineWidth   = active ? 2 : 1;
-        ctx.strokeStyle = active ? FG : DIM;
-        ctx.fillStyle   = active ? 'rgba(77,255,136,0.12)' : 'rgba(0,0,0,0.35)';
+        nb   = cl.numPad[k];
+        done = isDigitComplete(nb.n);
+        active = (nb.n === highlightNum) && !done;
+        ctx.lineWidth   = done ? 0.5 : (active ? 2 : 1);
+        ctx.strokeStyle = done ? '#2a2a2a' : (active ? FG : DIM);
+        ctx.fillStyle   = done ? 'rgba(0,0,0,0.2)' : (active ? 'rgba(77,255,136,0.12)' : 'rgba(0,0,0,0.35)');
         rrect(nb.x, nb.y, nb.s, nb.s, nb.s*0.18);
         ctx.fill(); ctx.stroke();
-        ctx.fillStyle = active ? FG : INK;
+        ctx.globalAlpha = done ? 0.22 : 1;
+        ctx.fillStyle   = active ? FG : INK;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.font = 'bold ' + (nb.s*0.55).toFixed(0) + 'px "Courier New",monospace';
         ctx.fillText(String(nb.n), nb.x+nb.s/2, nb.y+nb.s*0.56);
+        ctx.globalAlpha = 1;
       }
     }
 
