@@ -108,3 +108,32 @@ Clear the minefield without setting off a mine. Every revealed number tells you 
 **With a mouse** — left-click digs (or flags, per the toggle); **right-click flags** a cell directly, the classic desktop way.
 
 **Three sizes** — tap the difficulty chip to cycle **EASY** (9×9, 10 mines), **MED** (13×13, 28) and **HARD** (16×16, 51). The mine counter and timer track your run; **NEW** deals a fresh field.
+
+---
+
+### 🚀 Missile Command
+
+Defend your cities from a relentless barrage of incoming warheads. Each wave is faster and more complex than the last — missiles split mid-flight, bombers cross the screen, and smart bombs dive straight for your bases.
+
+**Touch controls**
+- **Tap anywhere in the sky** to fire a counter-missile that detonates at that point. Anything caught in the blast radius is destroyed.
+- **Tap multiple targets at once** — multitouch lets you handle several threats simultaneously; later waves demand it.
+
+Surviving a wave banks a bonus for intact cities and leftover ammo; your arsenal replenishes at the start of each new wave.
+
+**AI autoplay** — tap the robot icon in the HUD to hand the defence to the computer and watch it play out hands-free.
+
+---
+
+### 🔢 Sudoku
+
+Fill every row, column, and 3×3 box with the digits 1–9 — no repeats. Every puzzle is generated fresh with a unique solution.
+
+**Touch controls**
+- **Tap a cell** to select it, then **tap a digit** on the number pad to fill it in.
+- **Tap ERASE** to clear a filled cell before entering a different digit — cells cannot be overwritten directly.
+- **FILL / NOTES toggle** switches between placing final answers and pencilling in candidate digits. Pencil marks in the same row, column, and box are cleared automatically when you place a digit there.
+
+**Digit highlighting** — tapping a digit on the number pad (or selecting a filled cell) highlights every matching cell on the board. Once all nine instances of a digit are correctly placed, its button greys out.
+
+**Three difficulties** — tap DIFF to cycle **EASY**, **MED**, and **HARD**. The timer starts on your first move. **NEW** deals a fresh puzzle at the current difficulty.

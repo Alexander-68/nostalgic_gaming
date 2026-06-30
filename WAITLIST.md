@@ -7,8 +7,6 @@ touch-only, and playable at all three design ratios — 16:9, 9:8, 9:16).
 | Game | Style | Players | Notes |
 |------|-------|---------|-------|
 | Space Invaders | Fixed shooter (PvE) | 1 | First shooter. Drag-to-move + tap/auto fire. Grid scales to width. |
-| Missile Command | Tap-to-intercept defense | 1 | Purest multitouch showcase — the whole game is tapping the sky. |
-| Sudoku | Logic grid puzzle | 1 | Best quiet puzzle fit. Tap a cell, tap a digit; square board letterboxes cleanly and needs no animation engine. |
 | Frogger | Lane-crossing action | 1 | Swipe/tap lane movement. Rows scale naturally, and hazards are simple sprites with strong arcade recognition. |
 | Pac-Man | Maze chase | 1 vs AI | Highest recognition + real opponent AI, but the fixed maze is the hardest layout to fit across all three ratios. |
 | Pinball | Physics table | 1–2 hot-seat | Best touch/multitouch story, but highest effort (custom physics) and worst landscape fit. Flagship/centerpiece, not a quick win. |
@@ -24,25 +22,6 @@ the descending formation is the challenge). Drag anywhere along the bottom to
 move the cannon, tap to fire (or auto-fire for one-finger play). The invader grid
 scales to width; portrait just means a taller descent and fewer columns. Easy at
 all three ratios.
-
-### Missile Command — tap-to-intercept defense
-The game that justifies "10 simultaneous touch points" the way Pong justifies
-multitouch paddles. The entire game is tapping — tap the sky to detonate an
-interceptor; under a heavy raid with multiple bases you field several fingers at
-once. A "defend the bottom edge" layout, so it's trivially correct at 16:9, 9:8
-and 9:16 with no reflow. Great fit for the CRT-vector aesthetic and the
-"visible cause" principle — every explosion comes from a real interceptor arc.
-
-### Sudoku — logic grid puzzle
-The cleanest non-arcade addition: a 9×9 square grid, a compact digit pad, and no
-physics or animation requirement. Tap a cell to focus it, tap a digit to enter a
-candidate or final value, and use a mode toggle for notes. The square board can
-use `NG.fit` and letterbox at every ratio; landscape gets side panels for digits,
-timer, mistakes and difficulty, while portrait puts the keypad below the board.
-
-Implementation work is mostly puzzle generation/validation and touch UX polish:
-generate a complete solved grid, remove clues to a chosen difficulty, enforce a
-single solution, and keep hints/undo optional so the baseline game stays small.
 
 ### Frogger — lane-crossing action
 A strong arcade fit that avoids the fixed-maze problem. The level is a stack of
@@ -101,6 +80,10 @@ weekend game.
   feel/UX reference.
 
 ## Shipped from this list
+
+- **Missile Command** — built in `games/missile-command/`. Endless-wave tap-to-intercept defence. Tap the sky to fire a counter-missile that detonates at the tapped point, destroying anything in the blast radius; multitouch lets you target several threats at once. Waves escalate with splitting missiles, bombers, and smart bombs; a bonus round banks points for surviving cities and leftover ammo between waves. AI autoplay (robot icon in HUD). Responsive-court layout — the play field fills the screen at all three ratios with no letterbox.
+
+- **Sudoku** — built in `games/sudoku/`. Single-player logic puzzle. Puzzles are generated fresh each game using a backtracking solver with MRV heuristic and uniqueness verification (guaranteed one solution). Tap a cell to select, tap a digit to fill; ERASE clears a cell before overwriting; FILL/NOTES toggle switches between final answers and pencil marks (pencil marks auto-clear when a digit is placed in the same row/column/box). Digit highlighting: tapping a digit highlights all matching cells; once all nine are correctly placed its numpad button greys out. Timer starts on first move. Three difficulties (EASY 46 givens / MED 32 / HARD 24). Fixed-ratio letterbox layout — side panels in landscape, top/bottom bands in portrait.
 
 - **Gomoku** (Five-in-a-Row) — built in `games/gomoku/`. 15×15 board that boots
   straight into a same-screen 2-player game; each player's frame carries a robot
