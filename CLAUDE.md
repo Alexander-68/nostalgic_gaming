@@ -47,6 +47,24 @@ There is no test runner, linter, or CI configured yet. If you add one, keep it d
 - **Catalogue (`/index.html`)** — the home page. Enumerates the available games and links to each. The list of games is the catalogue's single source of truth; adding a game means adding its entry here.
 - **Games (`/games/<game-name>/`)** — one directory per game, each with its own `index.html` entry point plus its JS/CSS/assets. Self-contained and independently runnable.
 - **Shared scripts (`/shared/`)** — dependency-free classic scripts reused across games, exposed under the `window.NG` namespace. Games pull these in with relative `<script src>` tags (load order matters: `ng.js` first, then dependents, then the game). Keep shared code generic; game-specific logic stays in the game's own folder. Current modules:
+
+## Current games
+
+| Directory | Title | Pattern | Notes |
+|---|---|---|---|
+| `games/pong/` | Pingpong | Responsive court | **Canonical reference** — multitouch, 3 ratios, AI, same-device multiplayer |
+| `games/snake/` | Snake | Responsive court | 1–2 players, vs AI, multitouch |
+| `games/breakout/` | Brick Breaker | Responsive court | AI autoplay mode |
+| `games/gomoku/` | Gomoku | Fixed-ratio letterbox | Turn-based, vs AI; good reference for square-grid letterbox layout |
+| `games/tetris/` | Tetra Drop | Fixed-ratio letterbox | 1–2 players, vs AI, multitouch, garbage mechanic |
+| `games/minesweeper/` | Minesweeper | Fixed-ratio letterbox | Good reference for square-grid + side-panel / top-bottom-band chrome |
+| `games/missile-command/` | Missile Command | Responsive court | Endless waves, AI autoplay, multitouch |
+| `games/sudoku/` | Sudoku | Fixed-ratio letterbox | Puzzle generation (backtracking + MRV + uniqueness), digit-highlight UX |
+
+**Reference implementations by pattern:**
+- Responsive court (canvas = viewport): `games/pong/`
+- Fixed-ratio letterbox (square grid + chrome panels): `games/minesweeper/` or `games/gomoku/`
+- Puzzle / deduction game: `games/sudoku/`
   - **`shared/ng.js`** — core. `NG.RATIOS` / `NG.RATIO_LIST` (the three design ratios), `NG.classify(w,h)` (nearest design ratio for a viewport, compared in log space), `NG.fit(logicalW, logicalH, vw, vh)` (contain-fit scale + centered letterbox offsets), `NG.ready(fn)`, and `NG.onResize(fn)` (coalesced to one call per frame, fires once immediately, passes `{width, height, ratio}`). Exit handling: `NG.onExit(fn)` fires on the ESC / BACK / HOME keys kiosk hardware and remotes send; `NG.enableFinish({url, button, onFinish})` wires those keys *and* a FINISH button to navigate back to the catalogue (default `../../index.html`). Every game should expose a touch FINISH affordance plus call one of these. `NG.setPlaying(bool)` toggles a `ng-playing` class on `<body>` so page chrome (e.g. the FINISH button) can hide via CSS during active play — call it on your play/idle state transitions.
   - **`shared/touch.js`** — `NG.createTouch(element, {onDown, onMove, onUp}, {maxPoints, ignoreMouse})`. Pointer-Events-based multitouch (default cap 10; `ignoreMouse` skips mouse pointers when a game drives the mouse itself, e.g. Pong's click-to-lock paddles). Returns a controller with `.list()` (active points for per-frame polling), `.count`, `.destroy()`. Each point carries `x/y` (CSS px in-element), `nx/ny` (normalised 0..1), and `startX/Y` + `startNx/Ny` (e.g. to decide which side/player a touch belongs to). Sets `touch-action: none` on the element so the browser won't steal drags for scroll/zoom.
 
@@ -64,6 +82,18 @@ This is the dominant design constraint and affects layout, input placement, and 
 - **Fixed-ratio letterbox** — for games that need exact proportions, render to a fixed logical canvas at one of the design ratios and `NG.fit(...)` it (contain-fit) into the viewport, accepting black bars on mismatched windows. `NG.fit` / `NG.classify` in `shared/ng.js` support this.
 
 Either way, re-lay-out via `NG.onResize(...)`, and remember orientation can change *gameplay* layout, not just scale it — Pong puts paddles on the left/right edges in landscape and top/bottom in portrait. The orientation-independent "main axis / cross axis" model in `pong.js` lets one logic path serve all three ratios. A game is not done until it has been checked at 16:9, 9:8, and 9:16.
+
+## Puzzle-game conventions
+
+Puzzle games (Minesweeper, Sudoku) share a set of UX conventions distinct from action games:
+
+- **Chrome layout**: the puzzle field is centred and maximised; leftover space hosts controls. In landscape (`vw >= vh`): side panels left and right. In portrait: top and bottom bands. Recompute `chromeLayout()` each frame (pure arithmetic — cheap) so input hit-testing always reflects the live viewport.
+- **Difficulty cycling**: a single DIFF button cycles difficulty levels in order; changing difficulty immediately starts a new game.
+- **Timer starts on first move**, not on game start, so the player can study the initial state without pressure.
+- **Cell-lock rule** (Sudoku): once a cell has a digit, it cannot be overwritten — the player must erase it first. This prevents accidental overwrites after deselection.
+- **Digit highlighting** (Sudoku): `highlightNum` is an independent state variable (0 = none). Tapping a numpad digit or a filled cell sets it; placing a digit always sets it to the placed value so all matching cells stay lit. When all 9 correct instances of a digit are on the board, its numpad button is greyed out.
+- **Deselect on fill**: after successfully placing a digit, `selected` is set to `null` so the next numpad tap changes the highlight rather than overwriting the just-filled cell.
+- **Puzzle generation** (Sudoku): backtracking solver with MRV (minimum remaining values) heuristic for speed; cells are removed one at a time with uniqueness verification (`countSolutions(puzzle, 2) === 1`). Generation is synchronous and fast enough not to block the UI noticeably (~2 ms EASY, ~25 ms HARD on modern hardware).
 
 ## Multiplayer
 
