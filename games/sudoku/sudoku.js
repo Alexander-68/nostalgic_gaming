@@ -240,23 +240,23 @@
         return;
       }
 
-      // Fill mode: tap same digit again to erase.
-      board[cellIdx] = (board[cellIdx] === n) ? 0 : n;
-      if (board[cellIdx] !== 0) {
-        // Auto-clear matching notes in same row / col / box.
-        for (i = 0; i < 9; i++) { notes[r*9+i][n] = false; notes[i*9+c][n] = false; }
-        br = ((r/3)|0)*3; bc = ((c/3)|0)*3;
-        for (dr = 0; dr < 3; dr++)
-          for (dc = 0; dc < 3; dc++) notes[(br+dr)*9+(bc+dc)][n] = false;
-        // Clear all notes on the cell itself.
-        for (i = 1; i <= 9; i++) notes[cellIdx][i] = false;
-      }
+      // Filled cells are locked — must erase before overwriting.
+      if (board[cellIdx] !== 0) return;
+
+      board[cellIdx] = n;
+      // Auto-clear matching notes in same row / col / box.
+      for (i = 0; i < 9; i++) { notes[r*9+i][n] = false; notes[i*9+c][n] = false; }
+      br = ((r/3)|0)*3; bc = ((c/3)|0)*3;
+      for (dr = 0; dr < 3; dr++)
+        for (dc = 0; dc < 3; dc++) notes[(br+dr)*9+(bc+dc)][n] = false;
+      for (i = 1; i <= 9; i++) notes[cellIdx][i] = false;
+
       conflicts = getConflicts(board);
       if (isBoardComplete(board, solution)) {
         gameState = 'won';
         finalTime = elapsed();
-        selected  = null;
       }
+      selected = null; // deselect after a successful fill
     }
 
     function eraseCell(r, c) {
