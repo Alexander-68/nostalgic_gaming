@@ -537,8 +537,8 @@
         ctx.beginPath(); ctx.moveTo(boardLeft, boardTop+i*cs);   ctx.lineTo(boardLeft+S, boardTop+i*cs); ctx.stroke();
       }
 
-      // Bold box dividers.
-      ctx.lineWidth  = Math.max(1.5, cs*0.07);
+      // Box dividers.
+      ctx.lineWidth  = Math.max(1, cs*0.035);
       ctx.strokeStyle = FG;
       for (b = 3; b < 9; b += 3) {
         ctx.beginPath(); ctx.moveTo(boardLeft+b*cs, boardTop);   ctx.lineTo(boardLeft+b*cs, boardTop+S); ctx.stroke();
@@ -546,7 +546,7 @@
       }
 
       // Outer border.
-      ctx.lineWidth  = Math.max(2, cs*0.09);
+      ctx.lineWidth  = Math.max(1, cs*0.045);
       ctx.strokeStyle = FG;
       ctx.strokeRect(boardLeft, boardTop, S, S);
     }
