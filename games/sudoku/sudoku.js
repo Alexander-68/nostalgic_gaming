@@ -511,7 +511,7 @@
       var r, c, b;
 
       // Backing
-      ctx.fillStyle = PANEL;
+      ctx.fillStyle = '#000';
       ctx.fillRect(boardLeft, boardTop, S, S);
 
       // Per-cell backgrounds and digits / notes.
@@ -559,7 +559,7 @@
       } else if (selNum) {
         bg = (v === selNum) ? '#1a3824' : '#060d08';
       } else {
-        bg = given ? '#0d1e16' : PANEL;
+        bg = '#000';
       }
 
       ctx.fillStyle = bg;
