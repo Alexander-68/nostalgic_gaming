@@ -331,9 +331,11 @@
   }
 
   // ---- AI (autoplay) ---------------------------------------------------------
-  // Find the adjacent swap that clears the most gems immediately.
+  // Pick the legal swap that clears the *lowest* gems (deepest row), using the
+  // number of gems cleared as a tie-breaker. Clearing low first drops more of
+  // the stack above and tends to set up bigger cascades.
   function aiBestSwap() {
-    var best = null, bestCount = 0, r, c, i;
+    var best = null, bestScore = -1, r, c, i, m;
     for (r = 0; r < SIZE; r++) {
       for (c = 0; c < SIZE; c++) {
         i = idx(r, c);
@@ -344,8 +346,16 @@
           var j = cands[k];
           var g = grid.slice();
           var tmp = g[i]; g[i] = g[j]; g[j] = tmp;
-          var n = markCount(findMatches(g));
-          if (n > bestCount) { bestCount = n; best = { a: i, b: j }; }
+          var mark = findMatches(g);
+          var count = 0, deepest = -1;
+          for (m = 0; m < mark.length; m++) {
+            if (mark[m]) { count++; if (rowOf(m) > deepest) deepest = rowOf(m); }
+          }
+          if (count === 0) continue;
+          // Depth dominates (row 0..7); count only breaks ties between swaps
+          // that reach the same lowest row.
+          var sc = deepest * 1000 + count;
+          if (sc > bestScore) { bestScore = sc; best = { a: i, b: j }; }
         }
       }
     }
