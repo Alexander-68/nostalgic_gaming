@@ -58,9 +58,11 @@
     var groundY = 0;              // y of the ground line; defences sit on it
     var drawScale = 1;
     var cityW = 0, cityH = 0, baseW = 0, baseH = 0;
+    var baseFontStr = '';         // cached font string for base ammo readout
     var blastMax = 0;             // max fireball radius
     var enemyR = 0;               // warhead head radius (also its hit size)
     var stars = [];               // static background specks, regenerated on layout
+    var starCanvas = null;        // offscreen pre-render of the starfield
 
     // ---- entities -----------------------------------------------------------
     // Positions x are recomputed on layout from evenly-spaced slots so the line
@@ -115,18 +117,33 @@
       baseH = clamp(H * 0.045, 12, 42);
       blastMax = Math.min(W, H) * 0.085;
       enemyR = Math.max(Math.min(W, H) * 0.006, 2.5);
+      baseFontStr = 'bold ' + (baseH * 0.55).toFixed(0) + 'px "Courier New", monospace';
 
       if (!cities.length) buildDefences();
       // Reflow x positions onto the new slot spacing (state is preserved).
       for (var i = 0; i < cities.length; i++) cities[i].x = slotX(cities[i].slot);
       for (var j = 0; j < bases.length; j++) bases[j].x = slotX(bases[j].slot);
 
-      // Static starfield, seeded deterministically-enough from the layout.
+      // Static starfield — generate positions, then bake into an offscreen canvas
+      // so draw() can blit it with one drawImage instead of N fillRect+alpha calls.
       stars.length = 0;
       var n = Math.round((W * H) / 14000);
       for (var s = 0; s < n; s++) {
         stars.push({ x: Math.random() * W, y: Math.random() * groundY * 0.96, r: rand(0.4, 1.3), a: rand(0.05, 0.35) });
       }
+      if (!starCanvas) starCanvas = document.createElement('canvas');
+      starCanvas.width = canvas.width;
+      starCanvas.height = canvas.height;
+      var sc = starCanvas.getContext('2d');
+      sc.clearRect(0, 0, starCanvas.width, starCanvas.height);
+      sc.setTransform(drawScale, 0, 0, drawScale, 0, 0);
+      for (var si = 0; si < stars.length; si++) {
+        var st = stars[si];
+        sc.globalAlpha = st.a;
+        sc.fillStyle = INK;
+        sc.fillRect(st.x, st.y, st.r, st.r);
+      }
+      sc.globalAlpha = 1;
     }
 
     function buildDefences() {
@@ -386,14 +403,13 @@
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.setTransform(drawScale, 0, 0, drawScale, 0, 0);
 
-      // stars
-      for (var s = 0; s < stars.length; s++) {
-        var st = stars[s];
-        ctx.globalAlpha = st.a;
-        ctx.fillStyle = INK;
-        ctx.fillRect(st.x, st.y, st.r, st.r);
+      // stars — blit the pre-rendered offscreen canvas; no per-star draw calls
+      if (starCanvas) {
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.drawImage(starCanvas, 0, 0);
+        ctx.restore();
       }
-      ctx.globalAlpha = 1;
 
       // ground
       ctx.fillStyle = '#06140c';
@@ -469,7 +485,7 @@
           ctx.fillRect(x + a * per + per * 0.2, base - h * 0.95, per * 0.55, h * 0.18);
         }
         ctx.fillStyle = b.ammo > 0 ? INK : MUTED;
-        ctx.font = 'bold ' + (h * 0.55).toFixed(0) + 'px "Courier New", monospace';
+        ctx.font = baseFontStr;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(String(b.ammo), b.x, base - h * 0.32);
@@ -485,34 +501,51 @@
     }
 
     function drawTrails() {
-      // enemy warheads: a red trail from origin to head, amber tip
       ctx.lineWidth = Math.max(1.5, enemyR * 0.6);
-      for (var e = 0; e < enemies.length; e++) {
-        var w = enemies[e];
+
+      // All enemy trails: one path → one shadow-blurred stroke (was N strokes).
+      if (enemies.length) {
         ctx.strokeStyle = ENEMY;
         ctx.shadowColor = ENEMY;
         ctx.shadowBlur = enemyR * 1.5;
         ctx.beginPath();
-        ctx.moveTo(w.ox, w.oy); ctx.lineTo(w.x, w.y); ctx.stroke();
+        for (var e = 0; e < enemies.length; e++) {
+          var en = enemies[e];
+          ctx.moveTo(en.ox, en.oy);
+          ctx.lineTo(en.x, en.y);
+        }
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        // All warhead heads: one batched fill — no individual shadow needed,
+        // the trail glow already halos each tip.
         ctx.fillStyle = ENEMY_HEAD;
         ctx.beginPath();
-        ctx.arc(w.x, w.y, enemyR, 0, Math.PI * 2); ctx.fill();
+        for (var e2 = 0; e2 < enemies.length; e2++) {
+          var en2 = enemies[e2];
+          ctx.moveTo(en2.x + enemyR, en2.y);
+          ctx.arc(en2.x, en2.y, enemyR, 0, Math.PI * 2);
+        }
+        ctx.fill();
       }
-      // player counter-missiles: cyan trail toward the target, with an X marker
-      for (var s = 0; s < shots.length; s++) {
-        var sh = shots[s];
+
+      // All counter-missiles: one path → one shadow-blurred stroke.
+      if (shots.length) {
         ctx.strokeStyle = PLAYER;
         ctx.shadowColor = PLAYER;
         ctx.shadowBlur = enemyR * 1.5;
         ctx.beginPath();
-        ctx.moveTo(sh.ox, sh.oy); ctx.lineTo(sh.x, sh.y); ctx.stroke();
-        // target reticle
-        var r = enemyR * 1.4;
-        ctx.beginPath();
-        ctx.moveTo(sh.tx - r, sh.ty - r); ctx.lineTo(sh.tx + r, sh.ty + r);
-        ctx.moveTo(sh.tx + r, sh.ty - r); ctx.lineTo(sh.tx - r, sh.ty + r);
+        for (var s = 0; s < shots.length; s++) {
+          var sh = shots[s];
+          ctx.moveTo(sh.ox, sh.oy);
+          ctx.lineTo(sh.x, sh.y);
+          var r = enemyR * 1.4;
+          ctx.moveTo(sh.tx - r, sh.ty - r); ctx.lineTo(sh.tx + r, sh.ty + r);
+          ctx.moveTo(sh.tx + r, sh.ty - r); ctx.lineTo(sh.tx - r, sh.ty + r);
+        }
         ctx.stroke();
       }
+
       ctx.shadowBlur = 0;
     }
 
@@ -546,21 +579,33 @@
     }
 
     function drawBlasts() {
+      // Halos: per-blast (shadowBlur scales with radius so can't batch).
+      ctx.globalAlpha = 0.35;
       for (var i = 0; i < blasts.length; i++) {
         var bl = blasts[i];
         if (bl.r <= 0) continue;
         var col = bl.friendly ? PLAYER : ENEMY;
-        // flickering fireball: a bright core inside a translucent halo
         ctx.shadowColor = col;
         ctx.shadowBlur = bl.r * 0.8;
-        ctx.globalAlpha = 0.35;
         ctx.fillStyle = col;
-        ctx.beginPath(); ctx.arc(bl.x, bl.y, bl.r, 0, Math.PI * 2); ctx.fill();
-        ctx.globalAlpha = 0.9;
-        ctx.fillStyle = '#ffffff';
-        ctx.beginPath(); ctx.arc(bl.x, bl.y, bl.r * 0.5, 0, Math.PI * 2); ctx.fill();
-        ctx.globalAlpha = 1;
+        ctx.beginPath();
+        ctx.arc(bl.x, bl.y, bl.r, 0, Math.PI * 2);
+        ctx.fill();
       }
+      // Cores: all white, same alpha — one batched fill, no shadow needed.
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      for (var j = 0; j < blasts.length; j++) {
+        var bl2 = blasts[j];
+        if (bl2.r <= 0) continue;
+        var cr = bl2.r * 0.5;
+        ctx.moveTo(bl2.x + cr, bl2.y);
+        ctx.arc(bl2.x, bl2.y, cr, 0, Math.PI * 2);
+      }
+      ctx.fill();
+      ctx.globalAlpha = 1;
       ctx.shadowBlur = 0;
     }
 
