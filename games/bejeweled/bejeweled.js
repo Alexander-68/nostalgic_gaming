@@ -44,7 +44,9 @@
   var SIZE      = 8;
   var DRAG_MIN  = 12;      // CSS px before a drag counts as a directional swipe
   var BEST_KEY  = 'ng_bejeweled_best';
-  var AI_DELAY  = 480;     // ms between autoplay moves
+  var AI_DELAY  = 480;     // ms between autoplay moves (at 1× speed)
+  var AI_SPEEDUP   = 1.15; // animation/delay speed multiplier gained per AI move
+  var AI_MAX_SPEED = 8;    // cap — autoplay tops out at 8× the base speed
 
   // Animation timings (seconds)
   var SWAP_DUR  = 0.15;
@@ -76,6 +78,7 @@
 
   var aiEnabled = false;
   var aiGen = 0;          // bumps to cancel stale scheduled AI moves
+  var aiSpeed = 1;        // AI-mode speed multiplier; ramps 1 → AI_MAX_SPEED
 
   // ---- layout (recomputed on resize) ----------------------------------------
   var vw = 0, vh = 0, drawScale = 1;
@@ -223,7 +226,7 @@
   // Demonstrate a legal move: animate the two gems swapping out and springing
   // back, committing nothing. Picks the swap that would clear the most gems.
   function startHint() {
-    if (phase !== 'idle') return;
+    if (phase !== 'idle' || aiEnabled) return;   // no hints while the AI plays
     var mv = aiBestSwap();
     if (!mv) return;
     selected = -1;
@@ -244,10 +247,18 @@
     scheduleAI();
   }
 
+  // Animation speed: 1× normally; in AI mode it ramps up move-by-move so a long
+  // autoplay run gets satisfyingly brisk (up to AI_MAX_SPEED×). Dividing the
+  // fixed durations by it shortens every animation uniformly.
+  function curSpeed() { return aiEnabled ? aiSpeed : 1; }
+  function dSwap()  { return SWAP_DUR  / curSpeed(); }
+  function dClear() { return CLEAR_DUR / curSpeed(); }
+  function dFall()  { return FALL_DUR  / curSpeed(); }
+
   function update() {
     var p;
     if (phase === 'swap') {
-      p = (clock - animStart) / SWAP_DUR;
+      p = (clock - animStart) / dSwap();
       if (p >= 1) {
         // Commit the swap and see if it matches.
         var t = grid[swap.a]; grid[swap.a] = grid[swap.b]; grid[swap.b] = t;
@@ -263,7 +274,7 @@
         }
       }
     } else if (phase === 'swapback') {
-      p = (clock - animStart) / SWAP_DUR;
+      p = (clock - animStart) / dSwap();
       if (p >= 1) {
         var t2 = grid[swap.a]; grid[swap.a] = grid[swap.b]; grid[swap.b] = t2;
         swap = null;
@@ -271,7 +282,7 @@
         scheduleAI();
       }
     } else if (phase === 'clear') {
-      p = (clock - animStart) / CLEAR_DUR;
+      p = (clock - animStart) / dClear();
       if (p >= 1) {
         for (var i = 0; i < matchedList.length; i++) grid[matchedList[i]] = -1;
         matchedList = [];
@@ -281,7 +292,7 @@
         animStart = clock;
       }
     } else if (phase === 'fall') {
-      p = (clock - animStart) / FALL_DUR;
+      p = (clock - animStart) / dFall();
       if (p >= 1) {
         fallStart = [];
         var mark2 = findMatches(grid);
@@ -309,10 +320,12 @@
     phase = 'idle';
     selected = -1;
     swap = null;
+    hint = null;
     matchedList = [];
     fallStart = [];
     combo = 1; comboShown = 0;
     aiGen++;
+    aiSpeed = 1;            // fresh board ramps the AI speed up from the start
     NG.setPlaying(false);
     scheduleAI();
   }
@@ -345,8 +358,11 @@
     window.setTimeout(function () {
       if (gen !== aiGen || !aiEnabled || phase !== 'idle') return;
       var mv = aiBestSwap();
-      if (mv) initiateSwap(mv.a, mv.b);
-    }, AI_DELAY);
+      if (mv) {
+        aiSpeed = Math.min(aiSpeed * AI_SPEEDUP, AI_MAX_SPEED);  // ramp up each move
+        initiateSwap(mv.a, mv.b);
+      }
+    }, AI_DELAY / aiSpeed);
   }
 
   // ---- layout ----------------------------------------------------------------
@@ -545,7 +561,7 @@
   function drawGems() {
     var i, r, c;
     if (phase === 'swap' || phase === 'swapback') {
-      var p = easeOut(clamp((clock - animStart) / SWAP_DUR, 0, 1));
+      var p = easeOut(clamp((clock - animStart) / dSwap(), 0, 1));
       var f = (phase === 'swapback') ? 1 - p : p;   // swapback runs in reverse
       // every gem except the two swapping
       for (i = 0; i < grid.length; i++) {
@@ -560,7 +576,7 @@
     }
 
     if (phase === 'clear') {
-      var cp = clamp((clock - animStart) / CLEAR_DUR, 0, 1);
+      var cp = clamp((clock - animStart) / dClear(), 0, 1);
       var clearMark = new Array(grid.length);
       for (i = 0; i < matchedList.length; i++) clearMark[matchedList[i]] = true;
       for (i = 0; i < grid.length; i++) {
@@ -576,7 +592,7 @@
     }
 
     if (phase === 'fall') {
-      var fp = easeOut(clamp((clock - animStart) / FALL_DUR, 0, 1));
+      var fp = easeOut(clamp((clock - animStart) / dFall(), 0, 1));
       for (i = 0; i < grid.length; i++) {
         if (grid[i] === -1) continue;
         var sr = (fallStart[i] == null) ? rowOf(i) : fallStart[i];
@@ -686,7 +702,7 @@
   function drawChrome(cl) {
     drawButton(cl.finish, 'FINISH', true);
     drawButton(cl.newBtn, 'NEW', true);
-    drawButton(cl.hintBtn, 'HINT', phase === 'idle');
+    drawButton(cl.hintBtn, 'HINT', phase === 'idle' && !aiEnabled);
     drawScoreBox(cl.scoreBox, 'SCORE', score, cl.fs);
     drawScoreBox(cl.bestBox,  'BEST',  bestScore, cl.fs);
     drawRobotBtn(cl.robot);
@@ -793,7 +809,7 @@
           if      (inRect(pt.x, pt.y, cl.finish))  { window.location.href = '../../index.html'; }
           else if (inRect(pt.x, pt.y, cl.newBtn))  { newGame(); }
           else if (inRect(pt.x, pt.y, cl.hintBtn)) { startHint(); }
-          else if (inRect(pt.x, pt.y, cl.robot))   { aiEnabled = !aiEnabled; aiGen++; scheduleAI(); }
+          else if (inRect(pt.x, pt.y, cl.robot))   { aiEnabled = !aiEnabled; aiGen++; aiSpeed = 1; scheduleAI(); }
           else { tapGem(anchor.cell); }
         }
         anchor = null;
@@ -804,7 +820,7 @@
     window.addEventListener('keydown', function (ev) {
       if (ev.key === 'n' || ev.key === 'N') { newGame(); ev.preventDefault(); }
       else if (ev.key === 'h' || ev.key === 'H') { startHint(); ev.preventDefault(); }
-      else if (ev.key === 'a' || ev.key === 'A') { aiEnabled = !aiEnabled; aiGen++; scheduleAI(); ev.preventDefault(); }
+      else if (ev.key === 'a' || ev.key === 'A') { aiEnabled = !aiEnabled; aiGen++; aiSpeed = 1; scheduleAI(); ev.preventDefault(); }
     });
 
     NG.onExit(function () { window.location.href = '../../index.html'; });
