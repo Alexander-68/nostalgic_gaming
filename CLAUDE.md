@@ -60,6 +60,8 @@ There is no test runner, linter, or CI configured yet. If you add one, keep it d
 | `games/minesweeper/` | Minesweeper | Fixed-ratio letterbox | Good reference for square-grid + side-panel / top-bottom-band chrome |
 | `games/missile-command/` | Missile Command | Responsive court | Endless waves, AI autoplay, multitouch |
 | `games/sudoku/` | Sudoku | Fixed-ratio letterbox | Puzzle generation (backtracking + MRV + uniqueness), digit-highlight UX |
+| `games/reversi/` | Reversi | Fixed-ratio letterbox | Disc-flip strategy; minimax AI depth 5 + alpha-beta + positional weights; two robot-icon toggles |
+| `games/2048/` | 2048 | Fixed-ratio letterbox | Merge-tile puzzle; swipe to slide; 4×4 grid |
 
 **Reference implementations by pattern:**
 - Responsive court (canvas = viewport): `games/pong/`

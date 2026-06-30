@@ -137,3 +137,28 @@ Fill every row, column, and 3×3 box with the digits 1–9 — no repeats. Every
 **Digit highlighting** — tapping a digit on the number pad (or selecting a filled cell) highlights every matching cell on the board. Once all nine instances of a digit are correctly placed, its button greys out.
 
 **Three difficulties** — tap DIFF to cycle **EASY**, **MED**, and **HARD**. The timer starts on your first move. **NEW** deals a fresh puzzle at the current difficulty.
+
+---
+
+### 🟩 2048
+
+Swipe in any direction to slide all tiles at once — when two tiles of the same value collide they merge into one. A new tile spawns after every valid move. Reach **2048** to win, then keep going for the highest score you can reach.
+
+**Touch controls**
+- **Swipe** in any of the four cardinal directions to slide and merge. The dominant axis of your drag decides the direction.
+
+Your best score is saved between sessions. **NEW** starts a fresh grid.
+
+---
+
+### ⚫ Reversi
+
+Place a disc to flip every opponent disc trapped in a straight line between your new piece and another of yours. When the board fills — or neither player can move — the player with the most discs wins.
+
+**Touch controls**
+- **Tap any highlighted cell** to place your disc. Valid moves are shown as translucent dots.
+- Flipped discs animate with a coin-flip effect.
+
+**Robot icons** next to each player's panel toggle that side between human and computer. The AI uses minimax with alpha-beta pruning and a classic positional weight matrix — corners are highly prized. When a player has no legal move, their turn is skipped automatically and a brief toast tells you so.
+
+**UNDO** steps back one move. **NEW** starts a fresh game.
