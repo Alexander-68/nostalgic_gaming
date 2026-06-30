@@ -12,12 +12,19 @@
  *   - input via NG.createTouch: tap anywhere in the sky to fire. The nearest
  *     base with ammo launches a counter-missile to that point; it detonates into
  *     an expanding blast. Multitouch fires several at once — one per finger.
- *   - AI auto-play (the AUTO pill, top-left). Like Pong's AI fallback, the
- *     computer can take the controls: it solves the interception equation for
- *     each incoming warhead, leads it, fires from the nearest battery with ammo,
- *     waits out MIRV splits, and groups neighbours under one blast to save
- *     missiles. With AUTO on, the title / tally / game-over screens advance
- *     themselves too, so it runs as a continuous arcade attract-mode demo.
+ *   - AI auto-play (the robot button, top-left — same toggle as games/gomoku).
+ *     Like Pong's AI fallback, the computer can take the controls: it leads each
+ *     warhead with the interception equation but holds fire, letting threats bunch
+ *     up, then aims the fireball at the centre of the cluster so one blast bags two
+ *     or three at once. While ammo is plentiful it meets MIRVs at their split point
+ *     — the parent (usually before it even splits) and its just-born children go up
+ *     together — but under pressure it lets them split and sweeps the children up at
+ *     the floor instead, which spends fewer missiles. It sacrifices empty batteries
+ *     rather than spend missiles on them; and past wave
+ *     10 it crowns one city the survivor and defends it first, so when a wave
+ *     finally overwhelms the line that city falls last and the run stands as long
+ *     as it can. With it on, the title / tally / game-over screens advance
+ *     themselves too — an attract demo.
  *
  * Game feel (see memory: effects come from real geometry, not hidden flags):
  * a blast destroys an enemy warhead only when the warhead is actually inside the
@@ -57,7 +64,14 @@
   var COUNTER_SPEED = 1.45;      // counter-missile speed, in viewport heights / second
 
   // ---- AI auto-play -----------------------------------------------------------
-  var AI_FIRE_INTERVAL = 0.09;   // min seconds between the computer's launches (paces ammo + looks human)
+  var AI_FIRE_INTERVAL = 0.06;   // min seconds between the computer's launches
+  var AI_MUST_FIRE_LEAD = 0.45;  // fire a lone threat once it's this close to the intercept floor
+  var AI_CATCH_FRAC = 0.82;      // a warhead counts as "caught" within this fraction of blast radius
+  var AI_GROUP_MIN = 2;          // fire early (before must-fire) only to bag at least this many at once
+  var AI_SPLIT_LEAD = 0.2;       // engage a MIRV this many seconds before it splits, blast aimed at the split point
+  var AI_MIRV_AMMO_RATIO = 2.5;  // only pre-empt MIRVs at the split with at least this many missiles per airborne warhead...
+  var AI_MIRV_MIN_AMMO = 10;     // ...and this much ammo in reserve; under more pressure, let them split and group the kids
+  var LAST_STAND_WAVE = 10;      // from here on, abandon the rest and defend one city to the end
   var AI_ADVANCE_READY = 0.8;    // demo: pause on the title before it starts itself
   var AI_ADVANCE_BONUS = 2.2;    // pause on the wave tally so it stays readable
   var AI_ADVANCE_OVER = 3.2;     // pause on the game-over screen before it restarts
@@ -101,6 +115,7 @@
     // ---- AI auto-play state -------------------------------------------------
     var auto = loadAuto();        // is the computer playing for us?
     var aiCooldown = 0;           // seconds until the AI may launch again
+    var survivorCity = null;      // the one city the AI commits to in the last-stand endgame
     var autoAdvanceTimer = auto ? AI_ADVANCE_READY : 0;  // demo: time on a non-playing screen
 
     function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
@@ -182,6 +197,7 @@
     // ---- wave / game lifecycle ----------------------------------------------
     function startGame() {
       score = 0; sinceCity = 0; wave = 1;
+      survivorCity = null;
       buildDefences();
       startWave();
     }
@@ -240,6 +256,11 @@
           x: e.x, y: e.y, ox: e.x, oy: e.y,
           vx: (dx / d) * speed, vy: (dy / d) * speed,
           target: tgt.obj, tx: tgt.x, splitAt: -1,
+          // The children are born co-located at the split point. If a counter-
+          // missile is already inbound for that point (the AI claimed the parent),
+          // hand its claim down so they aren't separately targeted in the instant
+          // before the blast lands and sweeps them up.
+          claimedShot: e.claimedShot || null,
         });
       }
     }
@@ -336,13 +357,202 @@
       return false;
     }
 
-    // Drive the batteries when AUTO is on. Each tick (rate-limited) it picks the
-    // single most urgent threat heading for a live city/base, leads it, and fires
-    // — then claims any neighbours that fall inside the same blast so it doesn't
-    // double-spend. A warhead still carrying a MIRV split (splitAt > 0) is left
-    // until it splits, so we don't waste a missile on a head that's about to
-    // become three. Claims clear when the claiming missile detonates, so a rare
-    // miss gets re-targeted.
+    // The altitude the AI insists on killing warheads above — just over the city
+    // skyline, with room for the fireball. Threats are held (to let them bunch up)
+    // until they near this line, then they MUST be answered.
+    function interceptFloorY() { return groundY - cityH - blastMax * 1.1; }
+
+    // In the last-stand endgame the AI gives up the line and protects one city.
+    // Pick the most defensible survivor: the live city nearest a battery.
+    function chooseSurvivor() {
+      var best = null, bestD = Infinity;
+      for (var i = 0; i < cities.length; i++) {
+        if (!cities[i].alive) continue;
+        var d = Infinity;
+        for (var j = 0; j < bases.length; j++) d = Math.min(d, Math.abs(cities[i].x - bases[j].x));
+        if (d < bestD) { bestD = d; best = cities[i]; }
+      }
+      return best;
+    }
+
+    // The unclaimed threats worth a missile right now, each tagged with a defence
+    // priority. Warheads raining on bare ground, on a dead target, or on an EMPTY
+    // battery are ignored — once a turret is out of ammo it's worthless, so we
+    // sacrifice it rather than spend a missile saving it. Cities outrank batteries.
+    // From LAST_STAND_WAVE on, one city (the survivor) is promoted to the top
+    // priority: the AI still saves every city it can, but when a wave finally
+    // overwhelms the line that one is defended first and falls last — the endgame
+    // is about standing as long as possible, and the game only ends when the last
+    // city is gone.
+    var PRIO_SURVIVOR = 3, PRIO_CITY = 2, PRIO_BASE = 1;
+    // Can we afford to spend a dedicated missile pre-empting MIRVs at their split?
+    // Only when ammo is plentiful relative to what's in the air. Under pressure the
+    // reserve is worth more held back for the floor, so we let MIRVs split and catch
+    // the children in the convergent floor clusters instead (more ammo-efficient).
+    function mirvComfortable() {
+      var ammo = 0;
+      for (var i = 0; i < bases.length; i++) if (bases[i].alive) ammo += bases[i].ammo;
+      return ammo >= AI_MIRV_MIN_AMMO && ammo >= enemies.length * AI_MIRV_AMMO_RATIO;
+    }
+
+    function collectCandidates() {
+      var endgame = wave > LAST_STAND_WAVE;
+      if (endgame && (!survivorCity || !survivorCity.alive)) survivorCity = chooseSurvivor();
+      var preemptMirv = mirvComfortable();
+      var list = [];
+      for (var i = 0; i < enemies.length; i++) {
+        var w = enemies[i];
+        if (w.claimedShot || w.vy <= 0) continue;                   // only descenders
+        if (insideFriendlyBlast(w.x, w.y)) continue;                // already doomed for free
+        var tgt = w.target;
+        if (!tgt || !tgt.alive) continue;                           // heading for nothing that matters
+        var isCity = cities.indexOf(tgt) !== -1;
+        if (!isCity && tgt.ammo <= 0) continue;                     // sacrifice the empty turret
+        // A MIRV we can afford to pre-empt carries its split altitude, so the planner
+        // aims at the split point and takes the whole cluster with one blast. When
+        // ammo is tight we skip it here and let it split — the children come back as
+        // ordinary candidates and get swept up at the floor.
+        var splitAlt = w.splitAt > 0 ? w.splitAt : 0;
+        if (splitAlt > 0 && !preemptMirv) continue;
+        var prio = isCity ? (endgame && tgt === survivorCity ? PRIO_SURVIVOR : PRIO_CITY) : PRIO_BASE;
+        list.push({ obj: w, kind: 'warhead', x: w.x, y: w.y, vx: w.vx, vy: w.vy, prio: prio, split: splitAlt });
+      }
+      // Bombers/satellites: worth intercepting only to stop the bombs they're about
+      // to drop — not chased across the sky, so they sit at battery priority.
+      for (var f = 0; f < flyers.length; f++) {
+        var fl = flyers[f];
+        if (fl.claimedShot || insideFriendlyBlast(fl.x, fl.y)) continue;
+        list.push({ obj: fl, kind: 'flyer', x: fl.x, y: fl.y, vx: fl.vx, vy: 0, prio: PRIO_BASE, drops: fl.drops, dropTimer: fl.dropTimer });
+      }
+      return list;
+    }
+
+    // Would a fireball centred at P (born `t` seconds from now) sweep this target
+    // during its life? Take the target's closest approach to P over the blast's
+    // ~1.1s span and compare to the catch radius. This is what lets one blast be
+    // aimed to bag a whole cluster — and what we claim against, so nothing in that
+    // cluster draws a second missile.
+    function blastCatches(c, P, t) {
+      var dur = 1.1, catchR = blastMax * AI_CATCH_FRAC;
+      var bx = c.x + c.vx * t - P.x, by = c.y + c.vy * t - P.y;   // offset at blast birth
+      var vv = c.vx * c.vx + c.vy * c.vy;
+      var tau = vv > 1e-6 ? -(bx * c.vx + by * c.vy) / vv : 0;
+      tau = clamp(tau, 0, dur);                                   // moment of closest approach
+      var dx = bx + c.vx * tau, dy = by + c.vy * tau;
+      return Math.hypot(dx, dy) <= catchR + enemyR;
+    }
+
+    // Every candidate a standing battery can reach, each with the point a blast
+    // should be centred on (`P`, carrying its detonation time `P.t`) and a `must`
+    // flag set once it can't keep waiting:
+    //   - a MIRV is aimed at its SPLIT POINT and timed to detonate there, so the
+    //     parent (usually before it even splits) and any just-born children — still
+    //     stacked on that point — go up together;
+    //   - everything else is aimed at its straight-line intercept, held until it
+    //     nears the floor. Higher priorities get more lead, so a survivor-city
+    //     threat turns urgent earlier and is never the one left to chance.
+    function shootableSet(cands) {
+      var Vm = H * COUNTER_SPEED, floorY = interceptFloorY(), out = [];
+      for (var i = 0; i < cands.length; i++) {
+        var c = cands[i];
+        if (c.split > 0) {
+          var tSplit = (c.split - c.y) / c.vy;                 // seconds until it splits (vy > 0)
+          if (tSplit < 0) tSplit = 0;
+          var sx = c.x + c.vx * tSplit, sy = c.split;          // the split point
+          var sb = nearestBase(sx);
+          if (!sb) continue;
+          var flight = Math.hypot(sx - sb.x, sy - (groundY - baseH)) / Vm;
+          c.P = { x: sx, y: sy, t: flight };
+          c.must = tSplit <= flight + AI_SPLIT_LEAD;            // fire so the blast meets the split
+        } else {
+          var base = nearestBase(c.x);
+          if (!base) continue;
+          var P = intercept(c.x, c.y, c.vx, c.vy, base.x, groundY - baseH, Vm);
+          if (!P) continue;
+          c.P = P;
+          var lead = AI_MUST_FIRE_LEAD * (c.prio >= PRIO_SURVIVOR ? 1.6 : c.prio >= PRIO_CITY ? 1.15 : 1);
+          if (c.kind === 'warhead') c.must = c.vy > 0 && (floorY - c.y) / c.vy <= lead;
+          else c.must = c.drops > 0 && c.dropTimer <= 0.3;     // a flyer about to bomb
+        }
+        out.push(c);
+      }
+      return out;
+    }
+
+    // Which of the set a blast centred at point P (born at P.t) would sweep up.
+    function catchAround(P, shootable) {
+      var caught = [];
+      for (var i = 0; i < shootable.length; i++) {
+        if (blastCatches(shootable[i], P, P.t)) caught.push(shootable[i]);
+      }
+      return caught;
+    }
+
+    // Look for an aim point near the anchor's exact intercept that a blast would
+    // sweep MORE threats from — the midpoint between the anchor and each nearby
+    // threat is the natural candidate. Only adopt one if it verifiably catches more
+    // (re-checked with the same blast model) AND still takes the anchor itself, so
+    // this can never make a shot worse, only straddle a cluster better. A MIRV keeps
+    // its precise split-point aim — shifting it would wreck the timing.
+    function optimizeAim(anchor, shootable) {
+      if (anchor.split > 0) return anchor.P;
+      var t = anchor.P.t, ax = anchor.P.x, ay = anchor.P.y, catchR = blastMax * AI_CATCH_FRAC;
+      var best = anchor.P, bestN = catchAround(anchor.P, shootable).length;
+      for (var i = 0; i < shootable.length; i++) {
+        var c = shootable[i];
+        if (c === anchor) continue;
+        var qx = c.x + c.vx * t, qy = c.y + c.vy * t;          // its position at blast time
+        if (Math.hypot(qx - ax, qy - ay) > 2 * catchR) continue;
+        var mx = (ax + qx) / 2, my = (ay + qy) / 2;            // aim between the two
+        var base = nearestBase(mx);
+        var A = { x: mx, y: my, t: base ? Math.hypot(mx - base.x, my - (groundY - baseH)) / (H * COUNTER_SPEED) : t };
+        if (!blastCatches(anchor, A, A.t)) continue;           // anchor must stay covered
+        var n = catchAround(A, shootable).length;
+        if (n > bestN) { bestN = n; best = A; }
+      }
+      return best;
+    }
+
+    // Turn a chosen anchor into a concrete shot: optimise the aim to bag the most,
+    // then claim everything the blast will take (always including the anchor).
+    function finalizeShot(anchor, shootable) {
+      var aim = optimizeAim(anchor, shootable);
+      var caught = catchAround(aim, shootable);
+      if (caught.indexOf(anchor) === -1) caught.push(anchor);
+      return { aim: aim, caught: caught };
+    }
+
+    // Decide this tick's shot, or null to hold fire. Nothing urgent yet → only
+    // fire to bag a real cluster (>= AI_GROUP_MIN birds with one stone), otherwise
+    // wait and let the warheads keep bunching. Something urgent → answer the most
+    // important one first (top priority, then soonest), still sweeping up whatever
+    // shares its blast.
+    function planShot(cands) {
+      var shootable = shootableSet(cands);
+      if (!shootable.length) return null;
+
+      // Highest-priority, then soonest, of the threats that can't wait any longer.
+      var urgent = null;
+      for (var i = 0; i < shootable.length; i++) {
+        var c = shootable[i];
+        if (!c.must) continue;
+        if (!urgent || c.prio > urgent.prio || (c.prio === urgent.prio && c.P.t < urgent.P.t)) urgent = c;
+      }
+      if (urgent) return finalizeShot(urgent, shootable);
+
+      // Nobody's desperate — take a grouping shot if one is ripe, else hold fire.
+      var best = null;
+      for (var a = 0; a < shootable.length; a++) {
+        var caught = catchAround(shootable[a].P, shootable);
+        if (!best || caught.length > best.caught.length) best = { anchor: shootable[a], caught: caught };
+      }
+      if (best && best.caught.length >= AI_GROUP_MIN) return finalizeShot(best.anchor, shootable);
+      return null;   // hold fire — let them gather
+    }
+
+    // Drive the batteries when AUTO is on. Claims clear when their missile
+    // detonates, so a rare survivor is re-targeted; otherwise nothing is shot
+    // at twice.
     function aiUpdate(dt) {
       aiCooldown -= dt;
 
@@ -358,47 +568,11 @@
 
       if (aiCooldown > 0) return;
 
-      var Vm = H * COUNTER_SPEED;
-      var best = null, bestP = null, bestUrg = Infinity, bestIsFlyer = false;
-
-      // Incoming warheads — urgency is seconds-to-ground (sooner = pick first).
-      for (var a = 0; a < enemies.length; a++) {
-        var w = enemies[a];
-        if (w.claimedShot || w.splitAt > 0 || w.vy <= 0) continue;
-        if (!(w.target && w.target.alive)) continue;       // raining on bare ground — harmless
-        if (insideFriendlyBlast(w.x, w.y)) continue;
-        var wb = nearestBase(w.x);
-        if (!wb) continue;
-        var wp = intercept(w.x, w.y, w.vx, w.vy, wb.x, groundY - baseH, Vm);
-        if (!wp) continue;
-        var urg = (groundY - w.y) / w.vy;
-        if (urg < bestUrg) { bestUrg = urg; best = w; bestP = wp; bestIsFlyer = false; }
-      }
-
-      // Bombers / satellites — worth a shot (they drop bombs and score 100), but
-      // a fixed mid urgency so a genuinely diving warhead still wins the tick.
-      for (var f = 0; f < flyers.length; f++) {
-        var fl = flyers[f];
-        if (fl.claimedShot || insideFriendlyBlast(fl.x, fl.y)) continue;
-        var fb = nearestBase(fl.x);
-        if (!fb) continue;
-        var fp = intercept(fl.x, fl.y, fl.vx, 0, fb.x, groundY - baseH, Vm);
-        if (!fp) continue;
-        if (1.5 < bestUrg) { bestUrg = 1.5; best = fl; bestP = fp; bestIsFlyer = true; }
-      }
-
-      if (!best) return;
-      var shot = fireAt(bestP.x, bestP.y);
+      var plan = planShot(collectCandidates());
+      if (!plan) return;
+      var shot = fireAt(plan.aim.x, plan.aim.y);
       if (!shot) return;                       // no battery in reach has ammo
-      best.claimedShot = shot;
-      if (!bestIsFlyer) {
-        // Anything bunched near the lead point will share this blast — claim it.
-        for (var n = 0; n < enemies.length; n++) {
-          var en = enemies[n];
-          if (en.claimedShot || en === best) continue;
-          if (Math.hypot(en.x - bestP.x, en.y - bestP.y) <= blastMax * 0.8) en.claimedShot = shot;
-        }
-      }
+      for (var k = 0; k < plan.caught.length; k++) plan.caught[k].obj.claimedShot = shot;
       aiCooldown = AI_FIRE_INTERVAL;
     }
 
@@ -771,10 +945,12 @@
       ctx.shadowBlur = 0;
     }
 
-    // The AUTO toggle's hit / draw box (top-left). Touch-sized in every ratio.
+    // The auto-play toggle's hit / draw box (top-left) — a square robot button,
+    // touch-sized in every ratio.
     function autoRect() {
       var pad = Math.max(10, W * 0.02);
-      return { x: pad, y: pad, w: clamp(W * 0.2, 96, 168), h: clamp(H * 0.05, 30, 46) };
+      var s = clamp(Math.min(W, H) * 0.08, 44, 60);
+      return { x: pad, y: pad, w: s, h: s };
     }
 
     function roundRectPath(x, y, w, h, r) {
@@ -787,25 +963,37 @@
       ctx.closePath();
     }
 
+    // A robot toggle that mirrors games/gomoku's: head lit green when the computer
+    // has the controls, a dim outline when it's yours. Tapping it hands over / back.
     function drawAutoButton() {
       var r = autoRect();
-      roundRectPath(r.x, r.y, r.w, r.h, Math.min(10, r.h * 0.28));
+      roundRectPath(r.x, r.y, r.w, r.h, Math.min(12, r.w * 0.22));
       ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
       ctx.fill();
       ctx.lineWidth = 1.5;
       ctx.strokeStyle = auto ? FRIEND : DIM;
-      if (auto) { ctx.shadowColor = FRIEND; ctx.shadowBlur = r.h * 0.45; }
+      if (auto) { ctx.shadowColor = FRIEND; ctx.shadowBlur = r.w * 0.4; }
       ctx.stroke();
       ctx.shadowBlur = 0;
 
-      ctx.font = 'bold ' + (r.h * 0.4).toFixed(0) + 'px "Courier New", monospace';
-      ctx.textBaseline = 'middle';
-      ctx.textAlign = 'left';
-      ctx.fillStyle = auto ? PLAYER : MUTED;
-      ctx.fillText('AUTO', r.x + r.w * 0.12, r.y + r.h * 0.52);
-      ctx.textAlign = 'right';
-      ctx.fillStyle = auto ? FRIEND : MUTED;
-      ctx.fillText(auto ? 'ON' : 'OFF', r.x + r.w * 0.88, r.y + r.h * 0.52);
+      var color = auto ? FRIEND : MUTED;
+      var cx = r.x + r.w / 2, cy = r.y + r.h / 2, s = r.w * 0.28;
+      ctx.globalAlpha = auto ? 1 : 0.7;
+      ctx.lineWidth = Math.max(1.5, s * 0.16);
+      ctx.strokeStyle = color;
+      var hw = s * 1.5, hh = s * 1.25, hx = cx - hw / 2, hy = cy - hh * 0.36;
+      ctx.beginPath(); ctx.moveTo(cx, hy); ctx.lineTo(cx, hy - s * 0.5); ctx.stroke();   // antenna
+      ctx.fillStyle = color;                                                              // antenna tip
+      ctx.beginPath(); ctx.arc(cx, hy - s * 0.6, Math.max(1.5, s * 0.16), 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = auto ? color : 'rgba(255, 255, 255, 0.04)';                         // head
+      roundRectPath(hx, hy, hw, hh, s * 0.32); ctx.fill(); ctx.stroke();
+      var face = auto ? '#06140c' : color;                                                // eyes + mouth
+      ctx.fillStyle = face;
+      ctx.beginPath(); ctx.arc(cx - s * 0.4, cy + s * 0.04, s * 0.2, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(cx + s * 0.4, cy + s * 0.04, s * 0.2, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = face; ctx.lineWidth = Math.max(1, s * 0.14);
+      ctx.beginPath(); ctx.moveTo(cx - s * 0.34, cy + s * 0.5); ctx.lineTo(cx + s * 0.34, cy + s * 0.5); ctx.stroke();
+      ctx.globalAlpha = 1;
     }
 
     function drawHUD() {
@@ -818,7 +1006,7 @@
       ctx.textBaseline = 'top';
       ctx.font = 'bold ' + fs.toFixed(0) + 'px "Courier New", monospace';
       ctx.shadowBlur = 0;
-      // score (left, tucked under the AUTO pill)
+      // score (left, tucked under the robot button)
       ctx.fillStyle = FRIEND;
       ctx.textAlign = 'left';
       ctx.fillText(String(score), pad, ar.y + ar.h + Math.max(6, H * 0.012));
@@ -862,7 +1050,7 @@
           { text: 'MISSILE COMMAND', color: FRIEND, glow: true, scale: 1.15 },
           { text: 'TAP THE SKY TO DEFEND YOUR CITIES', color: MUTED, scale: 0.5 },
           { text: 'TAP TO START', color: ENEMY_HEAD, scale: 0.7 },
-          { text: auto ? 'AUTO-PLAY ON — SIT BACK AND WATCH' : 'TAP “AUTO” TO LET THE COMPUTER PLAY', color: PLAYER, scale: 0.42 },
+          { text: auto ? 'AUTO-PLAY ON — SIT BACK AND WATCH' : 'TAP THE ROBOT TO LET THE COMPUTER PLAY', color: PLAYER, scale: 0.42 },
         ], 1.7);
       } else if (state === 'wavebonus') {
         center([
