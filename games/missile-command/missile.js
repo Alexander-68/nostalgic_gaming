@@ -12,6 +12,12 @@
  *   - input via NG.createTouch: tap anywhere in the sky to fire. The nearest
  *     base with ammo launches a counter-missile to that point; it detonates into
  *     an expanding blast. Multitouch fires several at once — one per finger.
+ *   - AI auto-play (the AUTO pill, top-left). Like Pong's AI fallback, the
+ *     computer can take the controls: it solves the interception equation for
+ *     each incoming warhead, leads it, fires from the nearest battery with ammo,
+ *     waits out MIRV splits, and groups neighbours under one blast to save
+ *     missiles. With AUTO on, the title / tally / game-over screens advance
+ *     themselves too, so it runs as a continuous arcade attract-mode demo.
  *
  * Game feel (see memory: effects come from real geometry, not hidden flags):
  * a blast destroys an enemy warhead only when the warhead is actually inside the
@@ -48,6 +54,13 @@
   var FLYER_POINTS = 100;        // per bomber / satellite destroyed (× multiplier)
   var CITY_BONUS = 100;          // end-of-wave, per surviving city (× multiplier)
   var AMMO_BONUS = 5;            // end-of-wave, per unused missile (× multiplier)
+  var COUNTER_SPEED = 1.45;      // counter-missile speed, in viewport heights / second
+
+  // ---- AI auto-play -----------------------------------------------------------
+  var AI_FIRE_INTERVAL = 0.09;   // min seconds between the computer's launches (paces ammo + looks human)
+  var AI_ADVANCE_READY = 0.8;    // demo: pause on the title before it starts itself
+  var AI_ADVANCE_BONUS = 2.2;    // pause on the wave tally so it stays readable
+  var AI_ADVANCE_OVER = 3.2;     // pause on the game-over screen before it restarts
 
   NG.ready(function () {
     var canvas = document.getElementById('game');
@@ -85,6 +98,11 @@
     var flyerTimer = 0;           // seconds until the next bomber may appear
     var bonus = null;             // { cities, ammo, total } shown on the tally screen
 
+    // ---- AI auto-play state -------------------------------------------------
+    var auto = loadAuto();        // is the computer playing for us?
+    var aiCooldown = 0;           // seconds until the AI may launch again
+    var autoAdvanceTimer = auto ? AI_ADVANCE_READY : 0;  // demo: time on a non-playing screen
+
     function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
     function rand(a, b) { return a + Math.random() * (b - a); }
     function mult() { return Math.min(6, Math.ceil(wave / 2)); }   // classic-style score multiplier
@@ -95,6 +113,12 @@
     }
     function saveHigh() {
       try { localStorage.setItem('ng_missile_high', String(high)); } catch (e) {}
+    }
+    function loadAuto() {
+      try { return localStorage.getItem('ng_missile_auto') === '1'; } catch (e) { return false; }
+    }
+    function saveAuto() {
+      try { localStorage.setItem('ng_missile_auto', auto ? '1' : '0'); } catch (e) {}
     }
 
     // The nine defence slots, left to right: base, city×3, base, city×3, base.
@@ -168,6 +192,7 @@
       toSpawn = Math.min(WAVE_COUNT_MAX, WAVE_BASE_COUNT + (wave - 1) * WAVE_COUNT_STEP);
       spawnTimer = rand(0.3, 0.9);
       flyerTimer = rand(4, 8);
+      aiCooldown = 0;
       state = 'playing';
       NG.setPlaying(true);
     }
@@ -243,30 +268,165 @@
     }
 
     // ---- firing -------------------------------------------------------------
-    function fireAt(tx, ty) {
-      if (state !== 'playing') return;
-      ty = clamp(ty, 0, groundY - 1);
-      tx = clamp(tx, 0, W);
-      // nearest battery with ammo & still standing
+    // The nearest standing battery that still has ammo to a given x, or null.
+    function nearestBase(x) {
       var best = null, bestD = Infinity;
       for (var i = 0; i < bases.length; i++) {
         var b = bases[i];
         if (!b.alive || b.ammo <= 0) continue;
-        var d = Math.abs(b.x - tx);
+        var d = Math.abs(b.x - x);
         if (d < bestD) { bestD = d; best = b; }
       }
-      if (!best) return;            // out of missiles everywhere — no shot
+      return best;
+    }
+
+    // Launch a counter-missile at (tx, ty). Returns the shot (so the AI can track
+    // which warhead it claimed), or null when no battery can reach.
+    function fireAt(tx, ty) {
+      if (state !== 'playing') return null;
+      ty = clamp(ty, 0, groundY - 1);
+      tx = clamp(tx, 0, W);
+      var best = nearestBase(tx);
+      if (!best) return null;       // out of missiles everywhere — no shot
       best.ammo--;
       var ox = best.x, oy = groundY - baseH;
       var dx = tx - ox, dy = ty - oy;
       var d2 = Math.hypot(dx, dy) || 1;
-      var speed = H * 1.45;
-      shots.push({ x: ox, y: oy, vx: (dx / d2) * speed, vy: (dy / d2) * speed, tx: tx, ty: ty, ox: ox, oy: oy });
+      var speed = H * COUNTER_SPEED;
+      var shot = { x: ox, y: oy, vx: (dx / d2) * speed, vy: (dy / d2) * speed, tx: tx, ty: ty, ox: ox, oy: oy };
+      shots.push(shot);
+      return shot;
+    }
+
+    // ---- AI auto-play -------------------------------------------------------
+    // Solve for the lead point where a counter-missile (speed Vm, from the
+    // battery) and a target (at e, moving by ev) meet — the classic interception
+    // quadratic. Vm dwarfs every warhead's speed, so a positive root always
+    // exists; we take the soonest one. Returns the meeting point, or null.
+    function intercept(ex, ey, evx, evy, bx, by, Vm) {
+      var dx = ex - bx, dy = ey - by;
+      var a = evx * evx + evy * evy - Vm * Vm;     // < 0 (the missile is faster)
+      var b = 2 * (dx * evx + dy * evy);
+      var c = dx * dx + dy * dy;
+      var t;
+      if (Math.abs(a) < 1e-6) {
+        if (Math.abs(b) < 1e-6) return null;
+        t = -c / b;
+      } else {
+        var disc = b * b - 4 * a * c;
+        if (disc < 0) return null;
+        var sq = Math.sqrt(disc);
+        var t1 = (-b + sq) / (2 * a), t2 = (-b - sq) / (2 * a);
+        t = Infinity;
+        if (t1 > 0 && t1 < t) t = t1;
+        if (t2 > 0 && t2 < t) t = t2;
+        if (!isFinite(t)) return null;
+      }
+      if (t <= 0) return null;
+      return { x: ex + evx * t, y: ey + evy * t, t: t };
+    }
+
+    // Is this point already inside a live friendly fireball? If so the AI leaves
+    // it alone — it's about to die for free; no need to spend a missile.
+    function insideFriendlyBlast(x, y) {
+      for (var i = 0; i < blasts.length; i++) {
+        var bl = blasts[i];
+        if (bl.friendly && bl.r > 0 && Math.hypot(x - bl.x, y - bl.y) <= bl.r + enemyR) return true;
+      }
+      return false;
+    }
+
+    // Drive the batteries when AUTO is on. Each tick (rate-limited) it picks the
+    // single most urgent threat heading for a live city/base, leads it, and fires
+    // — then claims any neighbours that fall inside the same blast so it doesn't
+    // double-spend. A warhead still carrying a MIRV split (splitAt > 0) is left
+    // until it splits, so we don't waste a missile on a head that's about to
+    // become three. Claims clear when the claiming missile detonates, so a rare
+    // miss gets re-targeted.
+    function aiUpdate(dt) {
+      aiCooldown -= dt;
+
+      // Release claims whose missile has already gone off (survivors re-open).
+      for (var i = 0; i < enemies.length; i++) {
+        var ce = enemies[i];
+        if (ce.claimedShot && shots.indexOf(ce.claimedShot) === -1) ce.claimedShot = null;
+      }
+      for (var fc = 0; fc < flyers.length; fc++) {
+        var cf = flyers[fc];
+        if (cf.claimedShot && shots.indexOf(cf.claimedShot) === -1) cf.claimedShot = null;
+      }
+
+      if (aiCooldown > 0) return;
+
+      var Vm = H * COUNTER_SPEED;
+      var best = null, bestP = null, bestUrg = Infinity, bestIsFlyer = false;
+
+      // Incoming warheads — urgency is seconds-to-ground (sooner = pick first).
+      for (var a = 0; a < enemies.length; a++) {
+        var w = enemies[a];
+        if (w.claimedShot || w.splitAt > 0 || w.vy <= 0) continue;
+        if (!(w.target && w.target.alive)) continue;       // raining on bare ground — harmless
+        if (insideFriendlyBlast(w.x, w.y)) continue;
+        var wb = nearestBase(w.x);
+        if (!wb) continue;
+        var wp = intercept(w.x, w.y, w.vx, w.vy, wb.x, groundY - baseH, Vm);
+        if (!wp) continue;
+        var urg = (groundY - w.y) / w.vy;
+        if (urg < bestUrg) { bestUrg = urg; best = w; bestP = wp; bestIsFlyer = false; }
+      }
+
+      // Bombers / satellites — worth a shot (they drop bombs and score 100), but
+      // a fixed mid urgency so a genuinely diving warhead still wins the tick.
+      for (var f = 0; f < flyers.length; f++) {
+        var fl = flyers[f];
+        if (fl.claimedShot || insideFriendlyBlast(fl.x, fl.y)) continue;
+        var fb = nearestBase(fl.x);
+        if (!fb) continue;
+        var fp = intercept(fl.x, fl.y, fl.vx, 0, fb.x, groundY - baseH, Vm);
+        if (!fp) continue;
+        if (1.5 < bestUrg) { bestUrg = 1.5; best = fl; bestP = fp; bestIsFlyer = true; }
+      }
+
+      if (!best) return;
+      var shot = fireAt(bestP.x, bestP.y);
+      if (!shot) return;                       // no battery in reach has ammo
+      best.claimedShot = shot;
+      if (!bestIsFlyer) {
+        // Anything bunched near the lead point will share this blast — claim it.
+        for (var n = 0; n < enemies.length; n++) {
+          var en = enemies[n];
+          if (en.claimedShot || en === best) continue;
+          if (Math.hypot(en.x - bestP.x, en.y - bestP.y) <= blastMax * 0.8) en.claimedShot = shot;
+        }
+      }
+      aiCooldown = AI_FIRE_INTERVAL;
+    }
+
+    function toggleAuto() {
+      auto = !auto;
+      saveAuto();
+      if (auto && state !== 'playing') autoAdvanceTimer = AI_ADVANCE_READY;
+    }
+
+    // What a tap does on a non-playing screen — used to run the attract demo.
+    function autoAdvance() {
+      if (state === 'ready') startGame();
+      else if (state === 'wavebonus') { wave++; startWave(); }
+      else if (state === 'over') startGame();
     }
 
     // ---- per-frame update ---------------------------------------------------
     function update(dt) {
-      if (state !== 'playing') return;
+      if (state !== 'playing') {
+        // Between waves / on the title / after a loss: drive the demo forward.
+        if (auto && autoAdvanceTimer > 0) {
+          autoAdvanceTimer -= dt;
+          if (autoAdvanceTimer <= 0) autoAdvance();
+        }
+        return;
+      }
+
+      if (auto) aiUpdate(dt);
 
       // release warheads over the course of the wave
       if (toSpawn > 0) {
@@ -388,12 +548,14 @@
       addScore(cityPts + ammoPts);
       bonus = { cities: savedCities, cityPts: cityPts, ammo: ammoLeft, ammoPts: ammoPts, total: cityPts + ammoPts };
       state = 'wavebonus';
+      autoAdvanceTimer = AI_ADVANCE_BONUS;
       NG.setPlaying(false);
     }
 
     function endGame() {
       if (score > high) { high = score; saveHigh(); }
       state = 'over';
+      autoAdvanceTimer = AI_ADVANCE_OVER;
       NG.setPlaying(false);
     }
 
@@ -609,16 +771,57 @@
       ctx.shadowBlur = 0;
     }
 
+    // The AUTO toggle's hit / draw box (top-left). Touch-sized in every ratio.
+    function autoRect() {
+      var pad = Math.max(10, W * 0.02);
+      return { x: pad, y: pad, w: clamp(W * 0.2, 96, 168), h: clamp(H * 0.05, 30, 46) };
+    }
+
+    function roundRectPath(x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+    }
+
+    function drawAutoButton() {
+      var r = autoRect();
+      roundRectPath(r.x, r.y, r.w, r.h, Math.min(10, r.h * 0.28));
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+      ctx.fill();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = auto ? FRIEND : DIM;
+      if (auto) { ctx.shadowColor = FRIEND; ctx.shadowBlur = r.h * 0.45; }
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      ctx.font = 'bold ' + (r.h * 0.4).toFixed(0) + 'px "Courier New", monospace';
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'left';
+      ctx.fillStyle = auto ? PLAYER : MUTED;
+      ctx.fillText('AUTO', r.x + r.w * 0.12, r.y + r.h * 0.52);
+      ctx.textAlign = 'right';
+      ctx.fillStyle = auto ? FRIEND : MUTED;
+      ctx.fillText(auto ? 'ON' : 'OFF', r.x + r.w * 0.88, r.y + r.h * 0.52);
+    }
+
     function drawHUD() {
       var pad = Math.max(10, W * 0.02);
       var fs = clamp(H * 0.035, 14, 30);
+
+      drawAutoButton();
+      var ar = autoRect();
+
       ctx.textBaseline = 'top';
       ctx.font = 'bold ' + fs.toFixed(0) + 'px "Courier New", monospace';
       ctx.shadowBlur = 0;
-      // score (left)
+      // score (left, tucked under the AUTO pill)
       ctx.fillStyle = FRIEND;
       ctx.textAlign = 'left';
-      ctx.fillText(String(score), pad, pad);
+      ctx.fillText(String(score), pad, ar.y + ar.h + Math.max(6, H * 0.012));
       // wave (right)
       ctx.fillStyle = ENEMY_HEAD;
       ctx.textAlign = 'right';
@@ -659,6 +862,7 @@
           { text: 'MISSILE COMMAND', color: FRIEND, glow: true, scale: 1.15 },
           { text: 'TAP THE SKY TO DEFEND YOUR CITIES', color: MUTED, scale: 0.5 },
           { text: 'TAP TO START', color: ENEMY_HEAD, scale: 0.7 },
+          { text: auto ? 'AUTO-PLAY ON — SIT BACK AND WATCH' : 'TAP “AUTO” TO LET THE COMPUTER PLAY', color: PLAYER, scale: 0.42 },
         ], 1.7);
       } else if (state === 'wavebonus') {
         center([
@@ -684,6 +888,13 @@
     // screens it advances the state instead.
     NG.createTouch(canvas, {
       onDown: function (p) {
+        // The AUTO pill wins the tap in every state (so it can't fire or start).
+        var ar = autoRect();
+        if (p.x >= ar.x && p.x <= ar.x + ar.w && p.y >= ar.y && p.y <= ar.y + ar.h) {
+          toggleAuto();
+          return;
+        }
+        // A tap still fires / advances even with AUTO on — the human can chip in.
         if (state === 'playing') { fireAt(p.x, p.y); return; }
         if (state === 'ready') { startGame(); }
         else if (state === 'wavebonus') { wave++; startWave(); }
