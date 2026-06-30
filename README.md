@@ -186,4 +186,4 @@ Swap two neighbouring gems to line up three or more of a kind in a row or column
 - **Tap a gem** to select it, then **tap an adjacent gem** to swap them — or **short-drag** a gem toward the neighbour you want (the direction snaps to the nearest axis).
 - A swap that makes no match springs back.
 
-The six gem types are told apart by **both colour and shape**, so they stay readable for everyone. The board never starts on a match and quietly reshuffles when no legal move remains. Your best score is saved between sessions; the **robot icon** lets the computer play on its own.
+The six gem types are told apart by **both colour and shape**, so they stay readable for everyone. The board never starts on a match and quietly reshuffles when no legal move remains. Stuck? **HINT** demonstrates a legal move by sliding the two gems together and back without committing it. Your best score is saved between sessions; the **robot icon** lets the computer play on its own.

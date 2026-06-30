@@ -50,6 +50,7 @@
   var SWAP_DUR  = 0.15;
   var CLEAR_DUR = 0.22;
   var FALL_DUR  = 0.26;
+  var HINT_DUR  = 0.62;   // hint demo: swap out and spring back
 
   // ---- game state ------------------------------------------------------------
   var grid = [];          // SIZE*SIZE of gem-type index (0..NUM_GEMS-1); never -1 at rest
@@ -66,6 +67,8 @@
 
   // Swap animation descriptor
   var swap = null;        // { a, b, aType, bType }
+  // Hint demo descriptor (non-committing swap-and-back)
+  var hint = null;        // { a, b, aType, bType }
   // Clear animation
   var matchedList = [];   // flat indices currently clearing
   // Fall animation — fallStart[idx] = visual start row (may be fractional/negative)
@@ -217,6 +220,19 @@
     aiGen++;   // cancel any pending autoplay tick; a move is underway
   }
 
+  // Demonstrate a legal move: animate the two gems swapping out and springing
+  // back, committing nothing. Picks the swap that would clear the most gems.
+  function startHint() {
+    if (phase !== 'idle') return;
+    var mv = aiBestSwap();
+    if (!mv) return;
+    selected = -1;
+    hint = { a: mv.a, b: mv.b, aType: grid[mv.a], bType: grid[mv.b] };
+    phase = 'hint';
+    animStart = clock;
+    aiGen++;   // pause autoplay during the demo; rescheduled when it ends
+  }
+
   function settleIdle() {
     phase = 'idle';
     combo = 1;
@@ -275,6 +291,12 @@
         } else {
           settleIdle();
         }
+      }
+    } else if (phase === 'hint') {
+      if ((clock - animStart) / HINT_DUR >= 1) {
+        hint = null;
+        phase = 'idle';
+        scheduleAI();   // resume autoplay if it was on
       }
     }
   }
@@ -373,7 +395,8 @@
         mode: 'wide',
         finish:   { x: cxL - bw / 2, y: boardTop + gap,              w: bw, h: bh },
         newBtn:   { x: cxL - bw / 2, y: boardTop + gap * 2 + bh,     w: bw, h: bh },
-        robot:    { x: cxL - bw / 2, y: boardTop + gap * 3 + bh * 2, w: bw, h: bh },
+        hintBtn:  { x: cxL - bw / 2, y: boardTop + gap * 3 + bh * 2, w: bw, h: bh },
+        robot:    { x: cxL - bw / 2, y: boardTop + gap * 4 + bh * 3, w: bw, h: bh },
         scoreBox: { x: cxR - bw / 2, y: cy - bh - gap / 2,           w: bw, h: bh },
         bestBox:  { x: cxR - bw / 2, y: cy + gap / 2,                w: bw, h: bh },
         fs: fs,
@@ -386,11 +409,14 @@
     var mgx = clamp(vw * 0.03, 8, 24);
     var mgy = clamp(tb1 * 0.12, 6, 20);
     var sbw = clamp(vw * 0.28, 80, 170);
+    var gapS = clamp(unit * 0.02, 6, 18);
+    var byb = bb0 + (bbH - bh) / 2;   // bottom-band button row
     return {
       mode: 'stacked',
-      finish:   { x: mgx,             y: mgy,                  w: bw, h: bh },
-      newBtn:   { x: vw - mgx - bw,   y: mgy,                  w: bw, h: bh },
-      robot:    { x: vw / 2 - bw / 2, y: bb0 + (bbH - bh) / 2, w: bw, h: bh },
+      finish:   { x: mgx,           y: mgy, w: bw, h: bh },
+      newBtn:   { x: vw - mgx - bw, y: mgy, w: bw, h: bh },
+      hintBtn:  { x: vw / 2 - bw - gapS / 2, y: byb, w: bw, h: bh },
+      robot:    { x: vw / 2 + gapS / 2,      y: byb, w: bw, h: bh },
       scoreBox: { x: vw / 2 - sbw - clamp(unit * 0.015, 4, 10), y: tb1 - bh - mgy, w: sbw, h: bh },
       bestBox:  { x: vw / 2 + clamp(unit * 0.015, 4, 10),       y: tb1 - bh - mgy, w: sbw, h: bh },
       fs: fs,
@@ -560,6 +586,20 @@
       return;
     }
 
+    if (phase === 'hint') {
+      var hp = clamp((clock - animStart) / HINT_DUR, 0, 1);
+      var hf = Math.sin(hp * Math.PI);   // 0 → 1 → 0: swap out, then back
+      for (i = 0; i < grid.length; i++) {
+        if (i === hint.a || i === hint.b) continue;
+        drawGemCell(rowOf(i), colOf(i), grid[i], 1, 1);
+      }
+      var hra = rowOf(hint.a), hca = colOf(hint.a);
+      var hrb = rowOf(hint.b), hcb = colOf(hint.b);
+      drawGemCell(hra + (hrb - hra) * hf, hca + (hcb - hca) * hf, hint.aType, 1, 1);
+      drawGemCell(hrb + (hra - hrb) * hf, hcb + (hca - hcb) * hf, hint.bType, 1, 1);
+      return;
+    }
+
     // idle
     for (i = 0; i < grid.length; i++) {
       if (grid[i] === -1) continue;
@@ -646,6 +686,7 @@
   function drawChrome(cl) {
     drawButton(cl.finish, 'FINISH', true);
     drawButton(cl.newBtn, 'NEW', true);
+    drawButton(cl.hintBtn, 'HINT', phase === 'idle');
     drawScoreBox(cl.scoreBox, 'SCORE', score, cl.fs);
     drawScoreBox(cl.bestBox,  'BEST',  bestScore, cl.fs);
     drawRobotBtn(cl.robot);
@@ -749,9 +790,10 @@
         if (!anchor || anchor.id !== pt.id) return;
         if (!anchor.committed) {
           var cl = chromeLayout();
-          if      (inRect(pt.x, pt.y, cl.finish)) { window.location.href = '../../index.html'; }
-          else if (inRect(pt.x, pt.y, cl.newBtn)) { newGame(); }
-          else if (inRect(pt.x, pt.y, cl.robot))  { aiEnabled = !aiEnabled; aiGen++; scheduleAI(); }
+          if      (inRect(pt.x, pt.y, cl.finish))  { window.location.href = '../../index.html'; }
+          else if (inRect(pt.x, pt.y, cl.newBtn))  { newGame(); }
+          else if (inRect(pt.x, pt.y, cl.hintBtn)) { startHint(); }
+          else if (inRect(pt.x, pt.y, cl.robot))   { aiEnabled = !aiEnabled; aiGen++; scheduleAI(); }
           else { tapGem(anchor.cell); }
         }
         anchor = null;
@@ -761,6 +803,7 @@
     // Desktop-dev convenience only — the game never requires a keyboard.
     window.addEventListener('keydown', function (ev) {
       if (ev.key === 'n' || ev.key === 'N') { newGame(); ev.preventDefault(); }
+      else if (ev.key === 'h' || ev.key === 'H') { startHint(); ev.preventDefault(); }
       else if (ev.key === 'a' || ev.key === 'A') { aiEnabled = !aiEnabled; aiGen++; scheduleAI(); ev.preventDefault(); }
     });
 
