@@ -566,6 +566,99 @@
       </div>
     </a>
 
+    <a class="card playable" href="games/connect-four/index.html">
+      <svg class="art" viewBox="0 0 160 90" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Connect Four">
+        <rect width="160" height="90" fill="#000"/>
+        <!-- board frame -->
+        <rect x="40" y="11" width="80" height="70" rx="5" fill="#0e1c16" stroke="#1d5e38" stroke-width="1.2"/>
+        <!-- 7×6 grid of holes; r/y discs with a winning red diagonal lit up -->
+        <g>
+          <!-- empty slots -->
+          <g fill="#08120b">
+            <circle cx="46.7" cy="17.5" r="4"/><circle cx="56.1" cy="17.5" r="4"/><circle cx="65.4" cy="17.5" r="4"/><circle cx="74.8" cy="17.5" r="4"/><circle cx="84.2" cy="17.5" r="4"/><circle cx="93.6" cy="17.5" r="4"/><circle cx="103" cy="17.5" r="4"/>
+            <circle cx="46.7" cy="28.7" r="4"/><circle cx="56.1" cy="28.7" r="4"/><circle cx="65.4" cy="28.7" r="4"/><circle cx="84.2" cy="28.7" r="4"/><circle cx="93.6" cy="28.7" r="4"/><circle cx="103" cy="28.7" r="4"/>
+            <circle cx="46.7" cy="39.8" r="4"/><circle cx="56.1" cy="39.8" r="4"/><circle cx="93.6" cy="39.8" r="4"/><circle cx="103" cy="39.8" r="4"/>
+            <circle cx="46.7" cy="51" r="4"/><circle cx="103" cy="51" r="4"/>
+            <circle cx="103" cy="62.2" r="4"/>
+          </g>
+          <!-- yellow discs -->
+          <g fill="#ffcf4d">
+            <circle cx="74.8" cy="28.7" r="4"/>
+            <circle cx="65.4" cy="39.8" r="4"/><circle cx="84.2" cy="39.8" r="4"/>
+            <circle cx="65.4" cy="51" r="4"/><circle cx="74.8" cy="51" r="4"/>
+            <circle cx="46.7" cy="62.2" r="4"/><circle cx="65.4" cy="62.2" r="4"/><circle cx="84.2" cy="62.2" r="4"/>
+            <circle cx="56.1" cy="73.3" r="4"/><circle cx="74.8" cy="73.3" r="4"/><circle cx="93.6" cy="73.3" r="4"/>
+          </g>
+          <!-- red discs (winning diagonal bottom-left → up-right) -->
+          <g fill="#ff5d6c">
+            <circle cx="56.1" cy="39.8" r="4"/><circle cx="74.8" cy="39.8" r="4"/>
+            <circle cx="56.1" cy="51" r="4"/><circle cx="84.2" cy="51" r="4"/><circle cx="93.6" cy="51" r="4"/>
+            <circle cx="56.1" cy="62.2" r="4"/><circle cx="74.8" cy="62.2" r="4"/><circle cx="93.6" cy="62.2" r="4"/>
+            <circle cx="46.7" cy="73.3" r="4"/><circle cx="65.4" cy="73.3" r="4"/><circle cx="84.2" cy="73.3" r="4"/><circle cx="103" cy="73.3" r="4"/>
+          </g>
+          <!-- winning four: rings on the red diagonal -->
+          <g fill="none" stroke="#fff" stroke-width="1.3" opacity="0.85">
+            <circle cx="46.7" cy="73.3" r="5.4"/><circle cx="56.1" cy="62.2" r="5.4"/><circle cx="65.4" cy="51" r="5.4"/><circle cx="74.8" cy="39.8" r="5.4"/>
+          </g>
+        </g>
+      </svg>
+      <div class="meta">
+        <h2>CONNECT FOUR</h2>
+        <p>Tap a column to drop your disc; it falls to the lowest open slot. Line up four of your colour &mdash; across, down, or diagonally &mdash; before your rival. Play a friend, or take on the computer.</p>
+        <div class="tags">
+          <span class="tag">1&ndash;2 PLAYERS</span>
+          <span class="tag">VS AI</span>
+          <span class="tag">TOUCH</span>
+        </div>
+      </div>
+    </a>
+
+    <a class="card playable" href="games/bejeweled/index.html">
+      <svg class="art" viewBox="0 0 160 90" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Bejeweled">
+        <rect width="160" height="90" fill="#000"/>
+        <!-- gem board, centred -->
+        <rect x="50" y="9" width="60" height="72" rx="4" fill="#0e1c16"/>
+        <!-- highlighted matched row (three green diamonds about to clear) -->
+        <rect x="52" y="33" width="56" height="12" rx="2" fill="rgba(77,255,136,0.14)"/>
+        <g stroke-width="0.8">
+          <!-- row 0 -->
+          <circle cx="58" cy="16" r="4.4" fill="#ff5d6c" stroke="#a8323e"/>
+          <rect x="66.6" y="11.6" width="8.8" height="8.8" rx="2.4" fill="#5b8cff" stroke="#33518f"/>
+          <polygon points="85,11.6 89.4,20.4 80.6,20.4" fill="#ffcf4d" stroke="#a8852a"/>
+          <polygon points="96,11.6 100.4,16 96,20.4 91.6,16" fill="#4dff88" stroke="#2a9c55"/>
+          <!-- row 1 -->
+          <polygon points="58,28.6 62.4,33 58,37.4 53.6,33" fill="#4de8d0" stroke="#2a9488"/>
+          <circle cx="69" cy="33" r="4.4" fill="#ff5d6c" stroke="#a8323e"/>
+          <polygon points="80,32.4 81.3,29.4 82.6,32.4 85.6,32.4 83.1,34.2 84,37.4 80,35.4 76,37.4 76.9,34.2 74.4,32.4 77.4,32.4" fill="#b46bff" stroke="#6f3fa8"/>
+          <rect x="91.6" y="28.6" width="8.8" height="8.8" rx="2.4" fill="#5b8cff" stroke="#33518f"/>
+          <!-- row 2 — the matching three -->
+          <polygon points="58,45.6 62.4,50 58,54.4 53.6,50" fill="#4dff88" stroke="#2a9c55"/>
+          <polygon points="69,45.6 73.4,50 69,54.4 64.6,50" fill="#4dff88" stroke="#2a9c55"/>
+          <polygon points="80,45.6 84.4,50 80,54.4 75.6,50" fill="#4dff88" stroke="#2a9c55"/>
+          <circle cx="96" cy="50" r="4.4" fill="#ff5d6c" stroke="#a8323e"/>
+          <!-- row 3 -->
+          <rect x="53.6" y="62.6" width="8.8" height="8.8" rx="2.4" fill="#5b8cff" stroke="#33518f"/>
+          <polygon points="69,62.6 73.4,71.4 64.6,71.4" fill="#ffcf4d" stroke="#a8852a"/>
+          <circle cx="80" cy="67" r="4.4" fill="#4de8d0" stroke="#2a9488"/>
+          <polygon points="96,66.4 97.3,63.4 98.6,66.4 101.6,66.4 99.1,68.2 100,71.4 96,69.4 92,71.4 92.9,68.2 90.4,66.4 93.4,66.4" fill="#b46bff" stroke="#6f3fa8"/>
+        </g>
+        <!-- glossy highlights -->
+        <g fill="rgba(255,255,255,0.5)">
+          <circle cx="56.5" cy="14.5" r="1.1"/><circle cx="67.5" cy="48.5" r="1.1"/>
+          <circle cx="78.5" cy="48.5" r="1.1"/><circle cx="56.5" cy="48.5" r="1.1"/>
+        </g>
+      </svg>
+      <div class="meta">
+        <h2>BEJEWELED</h2>
+        <p>Swap two neighbouring gems to line up three or more of a kind. Matches burst, the board rains down to fill the gap, and lucky chains cascade for a rising combo multiplier &mdash; chase the high score.</p>
+        <div class="tags">
+          <span class="tag">1 PLAYER</span>
+          <span class="tag">AI AUTOPLAY</span>
+          <span class="tag">TOUCH</span>
+        </div>
+      </div>
+    </a>
+
     <div class="card soon" aria-disabled="true">
       <div class="art">?</div>
       <div class="meta">

@@ -6,8 +6,6 @@ touch-only, and playable at all three design ratios — 16:9, 9:8, 9:16).
 
 | Game | Style | Players | Notes |
 |------|-------|---------|-------|
-| Connect Four | Drop-disc strategy | 1–2 / vs AI | Tap a column to drop; first to four in a row wins. Landscape-native 7×6 grid; simple gravity + look-ahead AI. |
-| Bejeweled | Match-3 puzzle | 1 | Swap adjacent gems to make rows/cols of 3+. Cascades, combos, score-chase. Square grid scales to all ratios. |
 | Space Invaders | Fixed shooter (PvE) | 1 | First shooter. Drag-to-move + tap/auto fire. Grid scales to width. |
 | Frogger | Lane-crossing action | 1 | Swipe/tap lane movement. Rows scale naturally, and hazards are simple sprites with strong arcade recognition. |
 | Pac-Man | Maze chase | 1 vs AI | Highest recognition + real opponent AI, but the fixed maze is the hardest layout to fit across all three ratios. |
@@ -17,18 +15,6 @@ Add the next idea here as a row (and a section below if it needs detail), then
 promote it into `/games/<name>/` and link it from `/index.html` once built.
 
 ## Details
-
-### Connect Four — drop-disc strategy
-Tap a column to drop a disc to the lowest empty row; first to four in a row — horizontal, vertical, or diagonal — wins. A simple, satisfying mechanic with no hidden state.
-
-The 7×6 grid is wider than tall, making it landscape-native. In portrait, rotate the board concept 90° (drop from the left side, discs fall rightward) or simply let the grid scale down — both work. AI is a look-ahead on open threes and fours, threat-blocking first, then scoring, similar to the Gomoku AI. Two-player hot-seat (same screen) is free from the single-column-tap input.
-
-### Bejeweled — match-3 puzzle
-Swap two adjacent gems to make a horizontal or vertical run of three or more matching colours; matched gems vanish and the board cascades as gems fall to fill the gap. Chain reactions score multipliers; the goal is score-chasing before no valid swaps remain.
-
-The square gem grid (8×8 is classic) fits the same letterbox pattern as the other square-board games. Touch input is a short drag from one gem toward its neighbour — direction snaps to the nearest axis. The trickiest part is the cascade engine: after each removal, fall-fill, check for new matches, repeat until the board stabilises. No animation is required beyond colour fills, but smooth falling adds a lot of feel for modest extra code.
-
-Variants to consider: timed mode (beat the clock), or a level-based mode with a gem-clear quota. Either gives a natural difficulty progression without procedural level design.
 
 ### Space Invaders — fixed shooter
 Fills the missing shooter genre and the missing pure-PvE game (no opponent AI —
@@ -94,6 +80,10 @@ weekend game.
   feel/UX reference.
 
 ## Shipped from this list
+
+- **Connect Four** — built in `games/connect-four/`. Drop-disc strategy on a 7×6 grid. Tap a column to drop your disc to the lowest open slot (gravity fall + a single damped bounce); a pulsing ghost disc previews the hovered column. Win on four in a row — horizontal, vertical, or either diagonal — with the winning four lit by pulsing rings and the game-over banner held until the last disc settles. Two robot-icon toggles (same convention as Gomoku/Reversi) give solo vs. AI, pass-and-play, and computer-vs-computer. AI is minimax with alpha-beta pruning at depth 6, centre-first move ordering, immediate-win cutoff, and a window-scan heuristic with a defence bias. NEW / UNDO / FINISH chrome. Fixed-ratio letterbox — side panels in landscape/9:8, top/bottom bands in portrait.
+
+- **Bejeweled** — built in `games/bejeweled/`. Single-player match-3 on an 8×8 gem grid. Tap a gem then tap an adjacent gem to swap, or short-drag a gem toward its neighbour (direction snaps to the nearest axis); a swap that makes no run of 3+ springs back. Matches clear, gems above fall to fill the gap, fresh gems drop in from the top, and any new matches cascade for a rising combo multiplier (scoring 10 per gem × the cascade level). Six gem types are distinguished by both colour and shape (diamond/circle/square/triangle/hexagon/star) so they read apart even for colour-blind players. The board never starts with a match and reshuffles when no legal move remains. Best score persists via `localStorage`; a robot-icon toggle enables AI autoplay (picks the swap that clears the most gems). Fixed-ratio letterbox layout matching 2048's chrome.
 
 - **Missile Command** — built in `games/missile-command/`. Endless-wave tap-to-intercept defence. Tap the sky to fire a counter-missile that detonates at the tapped point, destroying anything in the blast radius; multitouch lets you target several threats at once. Waves escalate with splitting missiles, bombers, and smart bombs; a bonus round banks points for surviving cities and leftover ammo between waves. AI autoplay (robot icon in HUD). Responsive-court layout — the play field fills the screen at all three ratios with no letterbox.
 

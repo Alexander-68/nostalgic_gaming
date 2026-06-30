@@ -162,3 +162,28 @@ Place a disc to flip every opponent disc trapped in a straight line between your
 **Robot icons** next to each player's panel toggle that side between human and computer. The AI uses minimax with alpha-beta pruning and a classic positional weight matrix — corners are highly prized. When a player has no legal move, their turn is skipped automatically and a brief toast tells you so.
 
 **UNDO** steps back one move. **NEW** starts a fresh game.
+
+---
+
+### 🔴 Connect Four
+
+Drop your discs into a 7×6 grid and line up four of your colour — across, down, or diagonally — before your opponent does. Discs fall to the lowest open slot under gravity, so every column is a fresh threat.
+
+**Touch controls**
+- **Tap a column** (anywhere over it, or the channel just above) to drop your disc. A translucent ghost disc previews where it will land.
+
+**Robot icons** beside each player toggle that side between human and computer, covering solo vs. AI, pass-and-play, and computer-vs-computer. The AI is minimax with alpha-beta pruning (depth 6), ordered centre-first, and both takes an immediate win and blocks yours. The winning four light up with pulsing rings.
+
+**UNDO** steps back one move. **NEW** starts a fresh game.
+
+---
+
+### 💎 Bejeweled
+
+Swap two neighbouring gems to line up three or more of a kind in a row or column. Matched gems burst, the gems above rain down to fill the gap, new gems drop in from the top, and any fresh matches **cascade** for a rising combo multiplier — chase the highest score you can.
+
+**Touch controls**
+- **Tap a gem** to select it, then **tap an adjacent gem** to swap them — or **short-drag** a gem toward the neighbour you want (the direction snaps to the nearest axis).
+- A swap that makes no match springs back.
+
+The six gem types are told apart by **both colour and shape**, so they stay readable for everyone. The board never starts on a match and quietly reshuffles when no legal move remains. Your best score is saved between sessions; the **robot icon** lets the computer play on its own.
