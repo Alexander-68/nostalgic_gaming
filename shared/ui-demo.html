@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Cabinet OS — UI Kit</title>
+  <style>
+    :root {
+      --bg: #060b08; --glow: #0d2f1c;
+      --fg: #4dff88; --fg-dim: #2c7a4d; --fg-deep: #153a24;
+      --ink: #d6f7e4; --muted: #6b7a72; --amber: #ffcf4d;
+      --panel: #0a1410;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; overflow-x: hidden; }
+    .panel, canvas { max-width: 100%; }
+    body {
+      background: radial-gradient(130% 90% at 50% -20%, var(--glow) 0%, var(--bg) 60%) fixed, var(--bg);
+      color: var(--ink); font-family: "Courier New", monospace;
+      -webkit-text-size-adjust: 100%;
+      padding: clamp(16px, 4vw, 44px) clamp(14px, 4vw, 44px) 72px;
+    }
+    body::before {
+      content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 1;
+      background: radial-gradient(120% 120% at 50% 50%, transparent 55%, rgba(0,0,0,0.55) 100%);
+    }
+    body::after {
+      content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 1;
+      background: repeating-linear-gradient(to bottom, rgba(0,0,0,0) 0 2px, rgba(0,0,0,0.16) 2px 3px);
+      mix-blend-mode: multiply; animation: drift 8s linear infinite;
+    }
+    @keyframes drift { from { background-position: 0 0; } to { background-position: 0 3px; } }
+
+    .wrap { position: relative; z-index: 2; max-width: 1080px; margin: 0 auto; }
+
+    .statusbar {
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 6px 18px;
+      border: 1px solid var(--fg-deep); border-radius: 8px; padding: 8px 14px;
+      background: rgba(6,16,11,0.6);
+      font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted);
+    }
+    .statusbar .sys { color: var(--fg); font-weight: bold; letter-spacing: 0.22em; }
+    .statusbar .dim { color: var(--fg-dim); }
+    .statusbar a { color: var(--muted); text-decoration: none; }
+    .statusbar a:hover, .statusbar a:focus-visible { color: var(--fg); outline: none; }
+
+    .marquee { text-align: center; margin: clamp(24px, 6vw, 48px) 0 0; }
+    .marquee h1 {
+      margin: 0; font-size: clamp(30px, 8vw, 62px); font-weight: bold; letter-spacing: 0.1em; color: var(--fg);
+      text-shadow: 0 0 6px rgba(77,255,136,0.75), 0 0 22px rgba(77,255,136,0.4), 0 0 46px rgba(77,255,136,0.2);
+    }
+    .lede {
+      text-align: center; margin: 12px auto clamp(28px, 6vw, 52px); max-width: 620px;
+      color: var(--muted); font-size: 13px; line-height: 1.7; letter-spacing: 0.04em;
+    }
+
+    section { margin: 0 0 clamp(26px, 5vw, 44px); }
+    .eyebrow {
+      display: flex; align-items: baseline; gap: 12px;
+      font-size: 12px; letter-spacing: 0.24em; text-transform: uppercase; color: var(--fg);
+      margin: 0 0 4px;
+    }
+    .eyebrow .no { color: var(--fg-dim); }
+    .eyebrow .note { flex: 1; color: var(--muted); letter-spacing: 0.06em; font-size: 12px; text-align: right; }
+    .desc { margin: 0 0 14px; color: var(--ink); font-size: 13px; line-height: 1.6; max-width: 640px; }
+
+    .panel {
+      border: 1px solid var(--fg-deep); border-radius: 12px; overflow: hidden;
+      background: #050a07;
+    }
+    canvas { display: block; width: 100%; }
+    .panel > canvas { height: 148px; }
+    .panel.tall > canvas { height: 230px; }
+
+    .row { display: grid; gap: clamp(12px, 2vw, 20px); grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); }
+    .ratios { display: grid; gap: clamp(12px, 2vw, 20px); grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); align-items: end; }
+    .ratios figure { margin: 0; }
+    .ratios figcaption { margin-top: 8px; text-align: center; font-size: 11px; letter-spacing: 0.16em; color: var(--muted); }
+    .r169 canvas { aspect-ratio: 16 / 9; height: auto; }
+    .r98  canvas { aspect-ratio: 9 / 8;  height: auto; }
+    .r916 canvas { aspect-ratio: 9 / 16; height: auto; max-height: 320px; margin: 0 auto; }
+
+    footer {
+      position: relative; z-index: 2; max-width: 1080px; margin: 40px auto 0;
+      color: var(--muted); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+      border-top: 1px solid var(--fg-deep); padding-top: 16px;
+    }
+    footer::before { content: "> "; color: var(--fg-dim); }
+    @media (prefers-reduced-motion: reduce) { body::after { animation: none; } }
+  </style>
+</head>
+<body>
+ <div class="wrap">
+  <header>
+    <div class="statusbar">
+      <span class="sys">CABINET&middot;OS <span class="dim">UI KIT</span></span>
+      <a href="../index.html">&#9664; EJECT TO CATALOGUE</a>
+    </div>
+    <div class="marquee"><h1>IN-PLAY UI KIT</h1></div>
+    <p class="lede">One canvas-drawing language for the surfaces every game shares &mdash; buttons, HUD readouts,
+      status LEDs and the start / win / pause / over overlays. Load <b>ng.js</b> then <b>ui.js</b>, and draw with <b>NG.ui</b>.</p>
+  </header>
+
+  <section>
+    <div class="eyebrow"><span class="no">A</span> Buttons <span class="note">NG.ui.button</span></div>
+    <p class="desc">Rounded, hairline-bordered, uppercase. Three states: default, active (brighter border + phosphor
+      bloom, for an armed control), and disabled (dimmed). Pass a colour to accent one &mdash; amber reads as a
+      data / bonus action.</p>
+    <div class="panel"><canvas data-render="buttons"></canvas></div>
+  </section>
+
+  <section>
+    <div class="eyebrow"><span class="no">B</span> HUD readouts <span class="note">NG.ui.chip &middot; NG.ui.led</span></div>
+    <p class="desc">A muted label and an accented value. Green values are game state; amber is live data (score, best).
+      The status LED breathes when lit &mdash; use it for whose turn it is, lives, or an armed digit.</p>
+    <div class="panel"><canvas data-render="hud"></canvas></div>
+  </section>
+
+  <section>
+    <div class="eyebrow"><span class="no">C</span> Overlays <span class="note">NG.ui.overlay</span></div>
+    <p class="desc">The one modal every game reuses. A corner-bracket reticle frames the panel; the title carries a
+      bloom, one amber line shows live data, and the prompt ends in the blinking block cursor carried from the
+      catalogue. Tone colours the title: <b style="color:var(--fg)">win</b>, <b style="color:var(--amber)">pause</b>,
+      <b style="color:#ff5d6c">lose</b>.</p>
+    <div class="row">
+      <div class="panel tall"><canvas data-render="win"></canvas></div>
+      <div class="panel tall"><canvas data-render="pause"></canvas></div>
+      <div class="panel tall"><canvas data-render="over"></canvas></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow"><span class="no">D</span> Every ratio <span class="note">sizes derive from the shorter side</span></div>
+    <p class="desc">The same overlay call, unchanged, across the three design ratios &mdash; it reads from the shorter
+      side, so it never needs per-orientation tuning.</p>
+    <div class="ratios">
+      <figure class="r169"><div class="panel"><canvas data-render="win"></canvas></div><figcaption>16:9 &middot; LANDSCAPE</figcaption></figure>
+      <figure class="r98"><div class="panel"><canvas data-render="win"></canvas></div><figcaption>9:8 &middot; HALF-PORTRAIT</figcaption></figure>
+      <figure class="r916"><div class="panel"><canvas data-render="win"></canvas></div><figcaption>9:16 &middot; PORTRAIT</figcaption></figure>
+    </div>
+  </section>
+
+  <footer>SHARED KIT &middot; NG.ui IN shared/ui.js &middot; MOTION RESPECTS REDUCE-MOTION &middot; RUNS FROM A FILE OR A SERVER</footer>
+ </div>
+
+  <script src="ng.js"></script>
+  <script src="ui.js"></script>
+  <script>
+    NG.ready(function () {
+      var C = NG.ui.colors;
+
+      // Faint board behind an overlay so the scrim + brackets read in context.
+      function board(ctx, w, h) {
+        ctx.fillStyle = '#050a07';
+        ctx.fillRect(0, 0, w, h);
+        ctx.save();
+        ctx.strokeStyle = 'rgba(29,94,56,0.35)';
+        ctx.lineWidth = 1;
+        var step = Math.max(20, Math.min(w, h) / 9);
+        for (var x = step; x < w; x += step) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
+        for (var y = step; y < h; y += step) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+        ctx.restore();
+      }
+
+      var RENDER = {
+        buttons: function (ctx, w, h, t) {
+          ctx.fillStyle = '#050a07'; ctx.fillRect(0, 0, w, h);
+          var defs = [
+            { label: 'PLAY',   state: 'normal',   cap: 'DEFAULT' },
+            { label: 'NOTES',  state: 'active',   cap: 'ACTIVE' },
+            { label: 'UNDO',   state: 'disabled', cap: 'DISABLED' },
+            { label: 'BONUS',  state: 'normal',   cap: 'ACCENT', color: C.amber }
+          ];
+          var n = defs.length, pad = 18, gap = Math.max(10, w * 0.02);
+          var bw = Math.min(150, (w - pad * 2 - gap * (n - 1)) / n);
+          var bh = Math.min(50, h * 0.32);
+          var x0 = (w - (bw * n + gap * (n - 1))) / 2, y = h * 0.40 - bh / 2;
+          for (var i = 0; i < n; i++) {
+            var bx = x0 + i * (bw + gap);
+            NG.ui.button(ctx, { x: bx, y: y, w: bw, h: bh }, defs[i].label,
+              { state: defs[i].state, color: defs[i].color });
+            NG.ui.text(ctx, defs[i].cap, bx + bw / 2, y + bh + 20,
+              { color: C.muted, size: 11, bold: false, track: 0.14 });
+          }
+        },
+
+        hud: function (ctx, w, h, t) {
+          ctx.fillStyle = '#050a07'; ctx.fillRect(0, 0, w, h);
+          var size = Math.min(16, h * 0.12);
+          var x = Math.max(18, w * 0.06), y = h * 0.36, gap = size * 1.7;
+          x += NG.ui.chip(ctx, x, y, 'SCORE', '12,480', { size: size, color: C.amber }) + gap;
+          x += NG.ui.chip(ctx, x, y, 'LEVEL', '3',      { size: size, color: C.fg })    + gap;
+          NG.ui.chip(ctx, x, y, 'TIME', '1:24', { size: size, color: C.fg });
+
+          // LED row — turn / alive indicators
+          var ly = h * 0.68, lx = Math.max(18, w * 0.06), r = size * 0.34, fs = size * 0.86;
+          function group(label, on, color) {
+            ctx.save();
+            ctx.font = NG.ui.font(fs, false);
+            if ('letterSpacing' in ctx) ctx.letterSpacing = '0.12em';
+            var lw = ctx.measureText(label).width;
+            ctx.restore();
+            NG.ui.text(ctx, label, lx, ly, { color: C.muted, size: fs, bold: false, track: 0.12, align: 'left' });
+            NG.ui.led(ctx, lx + lw + r + 14, ly, r, { on: on, color: color, t: t });
+            lx += lw + r * 2 + gap + 18;
+          }
+          group('P1 TURN', true,  C.fg);
+          group('P2',      false, C.fg);
+          group('ALIVE',   true,  C.amber);
+        },
+
+        win: function (ctx, w, h, t) {
+          board(ctx, w, h);
+          NG.ui.overlay(ctx, { x: 0, y: 0, w: w, h: h }, {
+            title: 'SOLVED', tone: 'win',
+            stat: 'NEW BEST  2:41', statNew: true,
+            detail: 'FASTER THAN 88% OF YOUR ROUNDS',
+            prompt: 'TAP TO PLAY', t: t
+          });
+        },
+
+        pause: function (ctx, w, h, t) {
+          board(ctx, w, h);
+          NG.ui.overlay(ctx, { x: 0, y: 0, w: w, h: h }, {
+            title: 'PAUSED', tone: 'pause',
+            detail: 'TAP THE TIMER TO RESUME',
+            prompt: 'TAP TO RESUME', t: t
+          });
+        },
+
+        over: function (ctx, w, h, t) {
+          board(ctx, w, h);
+          NG.ui.overlay(ctx, { x: 0, y: 0, w: w, h: h }, {
+            title: 'GAME OVER', tone: 'lose',
+            stat: 'SCORE  8,420',
+            detail: 'BEST  12,480',
+            prompt: 'TAP TO RETRY', t: t
+          });
+        }
+      };
+
+      var canvases = [].slice.call(document.querySelectorAll('canvas[data-render]'));
+
+      function sizeAll() {
+        var dpr = window.devicePixelRatio || 1;
+        canvases.forEach(function (cv) {
+          var r = cv.getBoundingClientRect();
+          cv.width = Math.max(1, Math.round(r.width * dpr));
+          cv.height = Math.max(1, Math.round(r.height * dpr));
+          cv._m = { w: r.width, h: r.height, dpr: dpr };
+        });
+      }
+      window.addEventListener('resize', sizeAll);
+      sizeAll();
+
+      var start = 0;
+      function loop(ts) {
+        if (!start) start = ts;
+        var t = (ts - start) / 1000;
+        canvases.forEach(function (cv) {
+          var m = cv._m; if (!m) return;
+          var ctx = cv.getContext('2d');
+          ctx.setTransform(m.dpr, 0, 0, m.dpr, 0, 0);
+          ctx.clearRect(0, 0, m.w, m.h);
+          var fn = RENDER[cv.getAttribute('data-render')];
+          if (fn) fn(ctx, m.w, m.h, t);
+        });
+        window.requestAnimationFrame(loop);
+      }
+      window.requestAnimationFrame(loop);
+    });
+  </script>
+</body>
+</html>
