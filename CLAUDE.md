@@ -64,6 +64,7 @@ There is no test runner, linter, or CI configured yet. If you add one, keep it d
 | `games/2048/` | 2048 | Fixed-ratio letterbox | Merge-tile puzzle; swipe to slide; 4×4 grid |
 | `games/connect-four/` | Connect Four | Fixed-ratio letterbox | Drop-disc strategy; 7×6 grid; minimax AI depth 6 + alpha-beta; two robot-icon toggles |
 | `games/bejeweled/` | Bejeweled | Fixed-ratio letterbox | Match-3 puzzle; tap/drag to swap; cascade engine + combo multiplier; AI autoplay |
+| `games/emopac/` | Emopac | Fixed-ratio letterbox | Pac-Man; 28×31 maze + wrap tunnel; emoji ghost cast (👹😈👽👻) with classic scatter/chase AI; swipe/tap steer; energizers + bonus fruit |
 
 **Reference implementations by pattern:**
 - Responsive court (canvas = viewport): `games/pong/`
