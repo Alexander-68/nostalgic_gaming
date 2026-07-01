@@ -71,8 +71,6 @@
     '############################',
   ];
   var COLS = 28, ROWS = 31, TUNNEL_ROW = 14;
-  var HUD_TOP = 3, HUD_BOT = 2;             // extra logical rows for the score / lives bands
-  var TOTAL_ROWS = ROWS + HUD_TOP + HUD_BOT;
 
   // ---- directions ------------------------------------------------------------
   var UP = { x: 0, y: -1 }, DOWN = { x: 0, y: 1 }, LEFT = { x: -1, y: 0 }, RIGHT = { x: 1, y: 0 }, NONE = { x: 0, y: 0 };
@@ -488,8 +486,13 @@
   }
 
   // ---- layout ----------------------------------------------------------------
+  // The maze is maximised: in landscape it takes the full canvas height and the
+  // HUD (buttons + text) sits in a left-hand panel; in portrait the board is
+  // maximised on width with the HUD split into top / bottom bands.
   var canvas, ctx, vw = 0, vh = 0, drawScale = 1;
-  var cell = 0, originX = 0, originY = 0, mazeLeft = 0, mazeTop = 0;
+  var cell = 0, mazeLeft = 0, mazeTop = 0;
+  var panelMode = 'left';
+  var hud = {};
   var finishRect = null;
 
   function layout(info) {
@@ -501,15 +504,43 @@
     canvas.height = Math.round(vh * dpr);
     drawScale = dpr;
 
-    cell = Math.min(vw / COLS, vh / TOTAL_ROWS);
-    var gw = cell * COLS, gh = cell * TOTAL_ROWS;
-    originX = (vw - gw) / 2;
-    originY = (vh - gh) / 2;
-    mazeLeft = originX;
-    mazeTop = originY + HUD_TOP * cell;
+    var pad = clamp(Math.min(vw, vh) * 0.02, 6, 24);
 
-    var bw = clamp(cell * 4.0, 60, 150), bh = clamp(cell * 1.6, 26, 48);
-    finishRect = { x: originX + cell * 0.4, y: originY + (HUD_TOP * cell - bh) / 2, w: bw, h: bh };
+    if (vw >= vh) {
+      // Landscape / squarish: fill the height with the board, HUD on the left.
+      panelMode = 'left';
+      var minPanel = clamp(vw * 0.20, 130, 340);
+      cell = Math.min((vh - 2 * pad) / ROWS, (vw - minPanel - 2 * pad) / COLS);
+      var bW = cell * COLS, bH = cell * ROWS;
+      mazeTop = (vh - bH) / 2;
+      mazeLeft = vw - bW - pad;                         // board hugs the right edge
+      var panelX = pad, panelW = mazeLeft - 2 * pad, cx = panelX + panelW / 2;
+      var fs = clamp(Math.min(panelW * 0.16, cell * 1.3), 12, 34);
+      var fbh = clamp(cell * 1.5, 28, 52), fbw = clamp(panelW * 0.92, 80, 280);
+      finishRect = { x: cx - fbw / 2, y: mazeTop + pad, w: fbw, h: fbh };
+      hud = {
+        mode: 'left', cx: cx, fs: fs,
+        scoreY: mazeTop + bH * 0.22, highY: mazeTop + bH * 0.36, levelY: mazeTop + bH * 0.49,
+        livesY: mazeTop + bH * 0.66, fruitY: mazeTop + bH * 0.84,
+      };
+    } else {
+      // Portrait: maximise the board on width, HUD in top / bottom bands.
+      panelMode = 'stacked';
+      cell = (vw - 2 * pad) / COLS;
+      var minBand = clamp(vh * 0.07, 44, 130);
+      if (cell * ROWS > vh - 2 * minBand) cell = (vh - 2 * minBand) / ROWS;
+      var bW2 = cell * COLS, bH2 = cell * ROWS;
+      mazeLeft = (vw - bW2) / 2;
+      mazeTop = (vh - bH2) / 2;
+      var topH = mazeTop, botY = mazeTop + bH2, botH = vh - botY;
+      var fbh2 = clamp(topH * 0.5, 24, 46), fbw2 = clamp(cell * 4.2, 64, 160);
+      finishRect = { x: mazeLeft, y: (topH - fbh2) / 2, w: fbw2, h: fbh2 };
+      hud = { mode: 'stacked', fs: clamp(cell * 1.1, 12, 26), boardW: bW2, topY: topH / 2, botY: botY + botH / 2 };
+    }
+  }
+
+  function inBoard(x, y) {
+    return x >= mazeLeft && x <= mazeLeft + COLS * cell && y >= mazeTop && y <= mazeTop + ROWS * cell;
   }
 
   // tile coord -> pixel centre
@@ -663,28 +694,7 @@
     drawEmoji(em, cx, cy, size);
   }
 
-  function drawHud() {
-    ctx.textBaseline = 'middle';
-    var fs = clamp(cell * 1.0, 12, 28);
-
-    // score band (top)
-    ctx.fillStyle = FG;
-    ctx.textAlign = 'left';
-    ctx.font = 'bold ' + (fs * 0.62).toFixed(0) + 'px "Courier New", monospace';
-    ctx.fillText('1UP', originX + cell * 5.0, originY + cell * 0.7);
-    ctx.fillStyle = INK;
-    ctx.font = 'bold ' + fs.toFixed(0) + 'px "Courier New", monospace';
-    ctx.fillText(String(score), originX + cell * 5.0, originY + cell * 1.7);
-
-    ctx.textAlign = 'right';
-    ctx.fillStyle = FG;
-    ctx.font = 'bold ' + (fs * 0.62).toFixed(0) + 'px "Courier New", monospace';
-    ctx.fillText('HIGH', originX + cell * COLS - cell * 0.6, originY + cell * 0.7);
-    ctx.fillStyle = INK;
-    ctx.font = 'bold ' + fs.toFixed(0) + 'px "Courier New", monospace';
-    ctx.fillText(String(best), originX + cell * COLS - cell * 0.6, originY + cell * 1.7);
-
-    // FINISH button
+  function drawFinish() {
     var fb = finishRect;
     ctx.lineWidth = 1.5;
     ctx.strokeStyle = FG;
@@ -693,24 +703,66 @@
     ctx.fill(); ctx.stroke();
     ctx.fillStyle = FG;
     ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
     ctx.font = 'bold ' + (fb.h * 0.42).toFixed(0) + 'px "Courier New", monospace';
-    ctx.fillText('FINISH', fb.x + fb.w / 2, fb.y + fb.h * 0.55);
+    ctx.fillText('FINISH', fb.x + fb.w / 2, fb.y + fb.h * 0.54);
+  }
 
-    // lives + level + collected fruit (bottom band)
-    var by = mazeTop + ROWS * cell + cell * 1.0;
-    var lr = cell * 0.42;
-    for (var i = 0; i < lives; i++) {
-      drawPacAt(originX + cell * (1.0 + i * 1.2) + lr, by, lr, LEFT, 0.32);
-    }
-    ctx.fillStyle = MUTED;
+  // label above value, centred on (cx, y)
+  function drawStat(label, val, cx, y, fs) {
     ctx.textAlign = 'center';
-    ctx.font = 'bold ' + (fs * 0.6).toFixed(0) + 'px "Courier New", monospace';
-    ctx.fillText('LVL ' + level, originX + cell * COLS * 0.5, by);
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = FG;
+    ctx.font = 'bold ' + (fs * 0.55).toFixed(0) + 'px "Courier New", monospace';
+    ctx.fillText(label, cx, y - fs * 0.55);
+    ctx.fillStyle = INK;
+    ctx.font = 'bold ' + fs.toFixed(0) + 'px "Courier New", monospace';
+    ctx.fillText(String(val), cx, y + fs * 0.35);
+  }
 
-    var shown = fruitsWon.slice(-7);
-    for (var f = 0; f < shown.length; f++) {
-      drawEmoji(shown[f], originX + cell * COLS - cell * (1.0 + f * 1.1), by, cell * 0.9);
+  function drawLivesRow(cx, y) {
+    var lr = cell * 0.42, gap = lr * 0.7, n = Math.max(0, lives);
+    var total = n > 0 ? n * lr * 2 + (n - 1) * gap : 0;
+    var sx = cx - total / 2 + lr;
+    for (var i = 0; i < n; i++) drawPacAt(sx + i * (lr * 2 + gap), y, lr, LEFT, 0.32);
+  }
+
+  function drawFruitRow(cx, y) {
+    var shown = fruitsWon.slice(-6), step = cell * 1.05;
+    var fw = (shown.length - 1) * step, fx = cx - fw / 2;
+    for (var f = 0; f < shown.length; f++) drawEmoji(shown[f], fx + f * step, y, cell * 0.85);
+  }
+
+  function drawHud() {
+    var fs = hud.fs;
+    drawFinish();
+
+    if (hud.mode === 'left') {
+      var cx = hud.cx;
+      drawStat('1UP', score, cx, hud.scoreY, fs);
+      drawStat('HIGH', best, cx, hud.highY, fs);
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = FG;
+      ctx.font = 'bold ' + (fs * 0.62).toFixed(0) + 'px "Courier New", monospace';
+      ctx.fillText('LEVEL ' + level, cx, hud.levelY);
+      ctx.fillStyle = MUTED;
+      ctx.font = 'bold ' + (fs * 0.5).toFixed(0) + 'px "Courier New", monospace';
+      ctx.fillText('LIVES', cx, hud.livesY - cell * 0.95);
+      drawLivesRow(cx, hud.livesY);
+      ctx.fillStyle = MUTED;
+      ctx.font = 'bold ' + (fs * 0.5).toFixed(0) + 'px "Courier New", monospace';
+      ctx.fillText('FRUIT', cx, hud.fruitY - cell * 0.95);
+      drawFruitRow(cx, hud.fruitY);
+      return;
     }
+
+    // stacked (portrait): score in the top band, lives / level / fruit below
+    drawStat('1UP', score, mazeLeft + hud.boardW * 0.28, hud.topY, fs);
+    drawStat('HIGH', best, mazeLeft + hud.boardW * 0.72, hud.topY, fs);
+    drawLivesRow(mazeLeft + hud.boardW * 0.22, hud.botY);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = FG;
+    ctx.font = 'bold ' + (fs * 0.62).toFixed(0) + 'px "Courier New", monospace';
+    ctx.fillText('LVL ' + level, mazeLeft + hud.boardW * 0.5, hud.botY);
+    drawFruitRow(mazeLeft + hud.boardW * 0.78, hud.botY);
   }
 
   function drawCenterText(big, small, color) {
@@ -790,7 +842,7 @@
     ctx.globalAlpha = pulse;
     ctx.fillStyle = INK;
     ctx.font = 'bold ' + (cell * 0.8).toFixed(0) + 'px "Courier New", monospace';
-    ctx.fillText('TAP TO START', cx, cy + cell * 4.2);
+    ctx.fillText('TAP OR PRESS A KEY', cx, cy + cell * 4.2);
     ctx.globalAlpha = 1;
 
     ctx.fillStyle = MUTED;
@@ -868,18 +920,27 @@
         if (a.onFinish && inRect(pt.x, pt.y, finishRect)) { window.location.href = '../../index.html'; return; }
         if (a.moved) return;
         if (tapStart()) return;
-        if (state === 'playing') turnToward(pt.x, pt.y);
+        if (state === 'playing' && inBoard(pt.x, pt.y)) turnToward(pt.x, pt.y);
       },
     });
 
-    // Desktop-dev convenience — the game never requires a keyboard.
+    // Keyboard: navigation keys steer AND start the game (tap or any nav key
+    // begins play). The game never *requires* a keyboard — it's a desktop /
+    // kiosk-remote convenience on top of the touch controls.
     window.addEventListener('keydown', function (ev) {
       var k = (ev.key || '').toLowerCase();
-      if (k === 'arrowup' || k === 'w') { setWant(UP); ev.preventDefault(); }
-      else if (k === 'arrowdown' || k === 's') { setWant(DOWN); ev.preventDefault(); }
-      else if (k === 'arrowleft' || k === 'a') { setWant(LEFT); ev.preventDefault(); }
-      else if (k === 'arrowright' || k === 'd') { setWant(RIGHT); ev.preventDefault(); }
-      else if (k === 'enter' || k === ' ' || k === 'spacebar') { tapStart(); ev.preventDefault(); }
+      var dir = null;
+      if (k === 'arrowup' || k === 'w') dir = UP;
+      else if (k === 'arrowdown' || k === 's') dir = DOWN;
+      else if (k === 'arrowleft' || k === 'a') dir = LEFT;
+      else if (k === 'arrowright' || k === 'd') dir = RIGHT;
+      if (dir) {
+        if (state === 'title' || state === 'over') tapStart();   // any nav key starts / restarts
+        setWant(dir);
+        ev.preventDefault();
+        return;
+      }
+      if (k === 'enter' || k === ' ' || k === 'spacebar') { tapStart(); ev.preventDefault(); }
     });
 
     NG.onExit(function () { window.location.href = '../../index.html'; });
