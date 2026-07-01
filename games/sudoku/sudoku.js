@@ -5,12 +5,19 @@
  *   - classic script (no modules), runs from file://
  *   - fixed-ratio letterbox: the 9×9 grid is a square; chrome lives in the
  *     leftover space (side panels in landscape, top/bottom bands in portrait).
- *   - touch-first: tap a cell to select it, then tap the number pad to fill.
- *     ERASE clears the cell; separate FILL and NOTES keys switch between
- *     placing digits and pencilling in candidates; C.FILL enables
- *     continuously filling cells with the highlighted digit on tap.
+ *   - touch-first: tap a numpad digit to arm/highlight it, then tap any empty
+ *     cell to fill it with that digit — or tap an empty cell first and a
+ *     numpad digit next, if nothing is armed yet (this fills the cell without
+ *     arming the digit, so the next tap must select a cell again). Tapping
+ *     outside the board, numpad and buttons disarms the highlighted digit.
+ *     NOTES toggles between placing digits and pencilling candidates;
+ *     long-press-and-release NOTES (it relabels to AUTO NOTES while held)
+ *     to pencil in every legal candidate for every empty cell at once.
+ *     There is no separate ERASE — UNDO reverts the last placement.
  *   - three difficulties (EASY / MED / HARD), each generating a puzzle with a
  *     unique solution via backtracking + MRV + uniqueness verification.
+ *   - auto-complete: once every 3×3 box has at most one empty cell left, the
+ *     rest of the board is forced, so the remaining cells fill themselves.
  *   - on solve: shows total time, this difficulty's best (shortest) time, and
  *     the percentage of this player's own past rounds (at this difficulty)
  *     the run was faster than — tracked locally via localStorage, since the
@@ -18,7 +25,7 @@
  *
  * Keyboard (desktop dev): arrows to navigate, 1–9 to fill, Del to erase,
  * N for new game, F to toggle fill/notes mode, D to cycle difficulty,
- * U to undo, H for hint, A to toggle continuous-fill, P to pause.
+ * U to undo, H for hint, P to pause.
  */
 (function () {
   'use strict';
@@ -190,13 +197,15 @@
     var selected = null;
     var gameState = 'play';    // 'play' | 'won'
     var fillMode = 'fill';     // 'fill' | 'notes'
-    var contFill = false;      // continuous-fill mode: tap a cell to instantly place the highlighted digit
     var conflicts = {};
     var highlightNum = 0;
     var timerStarted = false, startClock = 0, finalTime = 0;
     var paused = false, pauseStart = 0, totalPaused = 0;
-    var undoStack = [];        // [{cellIdx, oldVal, oldNotes, wasHint}]
+    var undoStack = [];        // [{cellIdx, oldVal, oldNotes, wasHint} | {bulk:true, entries:[...]}]
     var winStats = null;       // {best, isNewBest, percentile, priorCount} — set on solve
+    var notesPressId = null;   // touch point id long-pressing the NOTES button
+    var notesPressStart = 0;   // clock time the NOTES press began
+    var NOTES_HOLD = 0.45;     // seconds to hold NOTES before release triggers AUTO NOTES
 
     // ---- per-difficulty completion-time history (localStorage) --------------
     function timesKey(idx) { return 'ng_sudoku_times_' + DIFFS[idx].key.toLowerCase(); }
@@ -244,7 +253,6 @@
       selected = null;
       gameState    = 'play';
       fillMode     = 'fill';
-      contFill     = false;
       conflicts    = {};
       highlightNum = 0;
       timerStarted = false;
@@ -255,6 +263,7 @@
       totalPaused  = 0;
       undoStack    = [];
       winStats     = null;
+      notesPressId = null;
     }
 
     function elapsed() {
@@ -290,8 +299,45 @@
       }
     }
 
+    // Largest number of empty cells in any single 3x3 block.
+    function maxBlockEmptyCount() {
+      var counts = [0,0,0,0,0,0,0,0,0], i, r, c, b;
+      for (i = 0; i < 81; i++) {
+        if (board[i] !== 0) continue;
+        r = (i/9)|0; c = i%9;
+        b = ((r/3)|0)*3 + ((c/3)|0);
+        counts[b]++;
+      }
+      var max = 0;
+      for (i = 0; i < 9; i++) if (counts[i] > max) max = counts[i];
+      return max;
+    }
+
+    // Once every block has at most one empty cell left, the rest of the board
+    // is forced — fill it in automatically rather than making the player type
+    // out cells with only one possible digit.
+    function autoCompleteIfObvious() {
+      if (gameState !== 'play' || maxBlockEmptyCount() > 1) return;
+      var i, j, filledAny = false;
+      for (i = 0; i < 81; i++) {
+        if (board[i] !== 0) continue;
+        undoStack.push({ cellIdx: i, oldVal: 0, oldNotes: notes[i].slice(), wasHint: true });
+        board[i] = solution[i];
+        hintCells[i] = true;
+        for (j = 1; j <= 9; j++) notes[i][j] = false;
+        filledAny = true;
+      }
+      if (filledAny) {
+        conflicts = getConflicts(board);
+        selected = null;
+        checkWin();
+      }
+    }
+
+    // Returns true only when a digit was actually placed on the board (not a
+    // notes toggle or a no-op on an already-filled cell).
     function fillCell(r, c, n) {
-      if (gameState !== 'play' || isGiven(r, c) || paused) return;
+      if (gameState !== 'play' || isGiven(r, c) || paused) return false;
       var cellIdx = r*9+c;
       startTimer();
 
@@ -300,10 +346,10 @@
           undoStack.push({ cellIdx: cellIdx, oldVal: board[cellIdx], oldNotes: notes[cellIdx].slice() });
           notes[cellIdx][n] = !notes[cellIdx][n];
         }
-        return;
+        return false;
       }
 
-      if (board[cellIdx] !== 0) return;
+      if (board[cellIdx] !== 0) return false;
 
       undoStack.push({ cellIdx: cellIdx, oldVal: board[cellIdx], oldNotes: notes[cellIdx].slice() });
       board[cellIdx] = n;
@@ -312,6 +358,8 @@
       conflicts = getConflicts(board);
       selected = null;
       checkWin();
+      autoCompleteIfObvious();
+      return true;
     }
 
     function eraseCell(r, c) {
@@ -327,10 +375,37 @@
     function undo() {
       if (!undoStack.length || gameState !== 'play' || paused) return;
       var op = undoStack.pop();
-      board[op.cellIdx] = op.oldVal;
-      notes[op.cellIdx] = op.oldNotes;
-      if (op.wasHint) delete hintCells[op.cellIdx];
+      if (op.bulk) {
+        for (var i = 0; i < op.entries.length; i++) {
+          var e = op.entries[i];
+          board[e.cellIdx] = e.oldVal;
+          notes[e.cellIdx] = e.oldNotes;
+          if (e.wasHint) delete hintCells[e.cellIdx];
+        }
+      } else {
+        board[op.cellIdx] = op.oldVal;
+        notes[op.cellIdx] = op.oldNotes;
+        if (op.wasHint) delete hintCells[op.cellIdx];
+      }
       conflicts = getConflicts(board);
+    }
+
+    // Long-press-and-release on NOTES: pencil in every legal candidate digit
+    // for every empty cell in one shot, then drop back to plain fill mode.
+    function autoFillNotes() {
+      if (gameState !== 'play' || paused) return;
+      var entries = [], i, r, c, n;
+      for (i = 0; i < 81; i++) {
+        if (board[i] !== 0) continue;
+        r = (i/9)|0; c = i%9;
+        entries.push({ cellIdx: i, oldVal: board[i], oldNotes: notes[i].slice() });
+        for (n = 1; n <= 9; n++) notes[i][n] = canPlace(board, r, c, n);
+      }
+      if (entries.length) {
+        startTimer();
+        undoStack.push({ bulk: true, entries: entries });
+        fillMode = 'fill';
+      }
     }
 
     function giveHint() {
@@ -352,6 +427,7 @@
       highlightNum = solution[idx];
       selected = { r: r, c: c };
       checkWin();
+      autoCompleteIfObvious();
     }
 
     function togglePause() {
@@ -413,8 +489,8 @@
         var cxL = lw / 2;
         var cxR = boardLeft + S + rw / 2;
 
-        // Left panel: all 10 action buttons distributed across full viewport height.
-        var NBTN    = 10;
+        // Left panel: all 7 action buttons distributed across full viewport height.
+        var NBTN    = 7;
         var gap2    = Math.max(2, Math.floor(gap * 0.55));
         var edgePad = Math.max(gap, clamp(vh * 0.04, 6, 20));
         var bh9max  = Math.floor((vh - 2 * edgePad - (NBTN-1) * gap2) / NBTN);
@@ -430,10 +506,7 @@
         var timer    = { x: lx, y: y0 + 3*(bh9+gap2), w: bwL, h: bh9 };
         var undoBtn  = { x: lx, y: y0 + 4*(bh9+gap2), w: bwL, h: bh9 };
         var hintBtn  = { x: lx, y: y0 + 5*(bh9+gap2), w: bwL, h: bh9 };
-        var erase    = { x: lx, y: y0 + 6*(bh9+gap2), w: bwL, h: bh9 };
-        var fillBtn  = { x: lx, y: y0 + 7*(bh9+gap2), w: bwL, h: bh9 };
-        var notesBtn = { x: lx, y: y0 + 8*(bh9+gap2), w: bwL, h: bh9 };
-        var contBtn  = { x: lx, y: y0 + 9*(bh9+gap2), w: bwL, h: bh9 };
+        var notesBtn = { x: lx, y: y0 + 6*(bh9+gap2), w: bwL, h: bh9 };
 
         // Right panel: 1×9 vertical numpad, keys sized to match board cells with a small gap.
         var numKeyGap = Math.max(3, Math.floor(cs * 0.08));
@@ -453,8 +526,7 @@
         return {
           panelMode: 'wide',
           finish: finish, newBtn: newBtn, diff: diff, timer: timer,
-          undoBtn: undoBtn, hintBtn: hintBtn,
-          erase: erase, fillBtn: fillBtn, notesBtn: notesBtn, contBtn: contBtn,
+          undoBtn: undoBtn, hintBtn: hintBtn, notesBtn: notesBtn,
           numPad: numPad
         };
       }
@@ -475,7 +547,7 @@
       var timer   = { x: mgx + 2*(topBtnW+gap),  y: topY, w: topBtnW, h: topBtnH };
       var newBtn  = { x: mgx + 3*(topBtnW+gap),  y: topY, w: topBtnW, h: topBtnH };
 
-      // Bottom: 5+5 numpad rows then a 4-button action row
+      // Bottom: 5+5 numpad rows then a 3-button action row
       var numCols = 5;
       var numH    = Math.floor(botH * 0.28);
       var numW    = Math.floor((vw - 2*mgx - (numCols-1)*gap) / numCols);
@@ -486,23 +558,20 @@
         col = (n <= 5) ? (n-1) : (n-6);
         numPad.push({ n: n, x: mgx + col*(numW+gap), y: numStartY + row*(numH+gap), s: numH });
       }
-      var erase = { x: mgx + 4*(numW+gap), y: numStartY + numH + gap, w: numW, h: numH };
 
-      // 5-button action row below numpad: FILL | NOTES | C.FILL | UNDO | HINT
+      // 3-button action row below numpad: NOTES | UNDO | HINT
       var actY    = numStartY + 2*(numH+gap);
       var actBtnH = clamp(botH * 0.22, 20, 42);
-      var actBtnW = Math.floor((vw - 2*mgx - 4*gap) / 5);
-      var fillBtn  = { x: mgx,                    y: actY, w: actBtnW, h: actBtnH };
-      var notesBtn = { x: mgx + 1*(actBtnW+gap),  y: actY, w: actBtnW, h: actBtnH };
-      var contBtn  = { x: mgx + 2*(actBtnW+gap),  y: actY, w: actBtnW, h: actBtnH };
-      var undoBtn  = { x: mgx + 3*(actBtnW+gap),  y: actY, w: actBtnW, h: actBtnH };
-      var hintBtn  = { x: mgx + 4*(actBtnW+gap),  y: actY, w: actBtnW, h: actBtnH };
+      var actBtnW = Math.floor((vw - 2*mgx - 2*gap) / 3);
+      var notesBtn = { x: mgx,                    y: actY, w: actBtnW, h: actBtnH };
+      var undoBtn  = { x: mgx + 1*(actBtnW+gap),  y: actY, w: actBtnW, h: actBtnH };
+      var hintBtn  = { x: mgx + 2*(actBtnW+gap),  y: actY, w: actBtnW, h: actBtnH };
 
       return {
         panelMode: 'stacked',
         finish: finish, diff: diff, timer: timer, newBtn: newBtn,
-        numPad: numPad, erase: erase,
-        fillBtn: fillBtn, notesBtn: notesBtn, contBtn: contBtn,
+        numPad: numPad,
+        notesBtn: notesBtn,
         undoBtn: undoBtn, hintBtn: hintBtn
       };
     }
@@ -519,14 +588,23 @@
     NG.createTouch(canvas, {
       onDown: function (pt) {
         anchors[pt.id] = { sx: pt.x, sy: pt.y, moved: false };
+        if (gameState === 'play' && !paused && inRect(pt.x, pt.y, chromeLayout().notesBtn)) {
+          notesPressId = pt.id;
+          notesPressStart = clock;
+        }
       },
       onMove: function (pt) {
         var a = anchors[pt.id];
-        if (a && (Math.abs(pt.x-a.sx) > 8 || Math.abs(pt.y-a.sy) > 8)) a.moved = true;
+        if (a && (Math.abs(pt.x-a.sx) > 8 || Math.abs(pt.y-a.sy) > 8)) {
+          a.moved = true;
+          if (pt.id === notesPressId) notesPressId = null;
+        }
       },
       onUp: function (pt) {
         var a = anchors[pt.id];
         delete anchors[pt.id];
+        var notesHeld = (pt.id === notesPressId) && (clock - notesPressStart >= NOTES_HOLD);
+        if (pt.id === notesPressId) notesPressId = null;
         if (!a || a.moved) return;
 
         var cl = chromeLayout(), k;
@@ -536,22 +614,26 @@
         if (inRect(pt.x, pt.y, cl.timer))   { togglePause(); return; }
         if (inRect(pt.x, pt.y, cl.undoBtn)) { undo();        return; }
         if (inRect(pt.x, pt.y, cl.hintBtn)) { giveHint();    return; }
-        if (inRect(pt.x, pt.y, cl.fillBtn))  { fillMode = 'fill';  return; }
-        if (inRect(pt.x, pt.y, cl.notesBtn)) { fillMode = 'notes'; return; }
-        if (inRect(pt.x, pt.y, cl.contBtn)) {
-          contFill = !contFill;
-          return;
-        }
-        if (inRect(pt.x, pt.y, cl.erase)) {
-          if (selected) eraseCell(selected.r, selected.c);
+        if (inRect(pt.x, pt.y, cl.notesBtn)) {
+          if (notesHeld) {
+            autoFillNotes();
+          } else {
+            fillMode = (fillMode === 'fill') ? 'notes' : 'fill';
+          }
           return;
         }
         for (k = 0; k < cl.numPad.length; k++) {
           if (inSq(pt.x, pt.y, cl.numPad[k])) {
             var n = cl.numPad[k].n;
             startTimer();
-            if (selected) fillCell(selected.r, selected.c, n);
-            highlightNum = n;
+            if (selected && fillCell(selected.r, selected.c, n)) {
+              // Select-cell-then-numpad flow: the digit is placed, so drop the
+              // highlight rather than arming it — the next tap must select a
+              // cell again before a digit fills anything.
+              highlightNum = 0;
+            } else {
+              highlightNum = n;
+            }
             return;
           }
         }
@@ -560,8 +642,8 @@
         var cell = cellAt(pt.x, pt.y);
         if (cell) {
           startTimer();
-          if (contFill && highlightNum) {
-            // In continuous-fill mode: tap cell → instantly fill (or add note) with highlighted digit.
+          if (highlightNum) {
+            // A digit is armed from the numpad: tap any cell → instantly fill (or add note) with it.
             if (fillMode === 'notes') {
               if (!isGiven(cell.r, cell.c)) {
                 var cellIdx = cell.r*9+cell.c;
@@ -583,6 +665,9 @@
             var cellVal = board[cell.r*9+cell.c];
             if (cellVal) highlightNum = cellVal;
           }
+        } else {
+          // Tapped outside the board, numpad and all buttons — disarm the highlighted digit.
+          highlightNum = 0;
         }
       }
     });
@@ -593,7 +678,6 @@
       if (k === 'n') { newGame();   return; }
       if (k === 'd') { cycleDiff(); return; }
       if (k === 'f') { fillMode = (fillMode==='fill')?'notes':'fill'; return; }
-      if (k === 'a') { contFill = !contFill; return; }
       if (k === 'u') { undo();      return; }
       if (k === 'h') { giveHint();  return; }
       if (k === 'p') { togglePause(); return; }
@@ -609,18 +693,9 @@
       if (k === 'arrowleft')  { ev.preventDefault(); selected = { r: selected.r, c: Math.max(0,selected.c-1) }; return; }
       if (k === 'arrowright') { ev.preventDefault(); selected = { r: selected.r, c: Math.min(8,selected.c+1) }; return; }
       if (k === 'backspace' || k === 'delete' || k === '0') { eraseCell(selected.r, selected.c); return; }
-      if (k === ' ') {
-        // Space in continuous-fill mode: fill selected cell with highlighted digit
-        if (contFill && highlightNum && selected) {
-          ev.preventDefault();
-          fillCell(selected.r, selected.c, highlightNum);
-        }
-        return;
-      }
       var num = parseInt(k, 10);
       if (num >= 1 && num <= 9) {
-        fillCell(selected.r, selected.c, num);
-        highlightNum = num;
+        highlightNum = fillCell(selected.r, selected.c, num) ? 0 : num;
       }
     });
 
@@ -742,11 +817,9 @@
       drawButton(cl.timer,   ts,       paused ? AMBER : MUTED, paused);
       drawButton(cl.undoBtn, 'UNDO',   undoStack.length ? MUTED : DIM, false);
       drawButton(cl.hintBtn, 'HINT',   FG,    false);
-      drawButton(cl.erase,   'ERASE',  MUTED, false);
-      var fillOn = fillMode === 'fill', notesOn = fillMode === 'notes';
-      drawButton(cl.fillBtn,  'FILL',   fillOn  ? AMBER : FG, fillOn);
-      drawButton(cl.notesBtn, 'NOTES',  notesOn ? AMBER : FG, notesOn);
-      drawButton(cl.contBtn,  'C.FILL', contFill ? FG : DIM, contFill);
+      var notesHeldNow = notesPressId !== null && (clock - notesPressStart) >= NOTES_HOLD;
+      var notesOn = fillMode === 'notes' || notesHeldNow;
+      drawButton(cl.notesBtn, notesHeldNow ? 'AUTO NOTES' : 'NOTES', notesOn ? AMBER : FG, notesOn);
 
       var k, nb, active, done;
       for (k = 0; k < cl.numPad.length; k++) {
