@@ -13,7 +13,8 @@
  *     NOTES toggles between placing digits and pencilling candidates;
  *     long-press-and-release NOTES (it relabels to AUTO NOTES while held)
  *     to pencil in every legal candidate for every empty cell at once.
- *     There is no separate ERASE — UNDO reverts the last placement.
+ *     ERASE clears the selected user-filled cell (given clues stay locked);
+ *     UNDO reverts the last change.
  *   - three difficulties (EASY / MED / HARD), each generating a puzzle with a
  *     unique solution via backtracking + MRV + uniqueness verification.
  *   - auto-complete: once every 3×3 box has at most one empty cell left, the
@@ -319,6 +320,13 @@
     function autoCompleteIfObvious() {
       if (gameState !== 'play' || maxBlockEmptyCount() > 1) return;
       var i, j, filledAny = false;
+      // Don't force-complete a board that still contains a wrong entry: filling
+      // the rest from the solution would lock it into a full-but-unwinnable
+      // state (isBoardComplete needs an exact match) that's hard to recover
+      // from. Only auto-complete when every placed digit is already correct.
+      for (i = 0; i < 81; i++) {
+        if (board[i] !== 0 && board[i] !== solution[i]) return;
+      }
       for (i = 0; i < 81; i++) {
         if (board[i] !== 0) continue;
         undoStack.push({ cellIdx: i, oldVal: 0, oldNotes: notes[i].slice(), wasHint: true });
@@ -427,7 +435,8 @@
       highlightNum = solution[idx];
       selected = { r: r, c: c };
       checkWin();
-      autoCompleteIfObvious();
+      // A hint reveals exactly one cell — it must not cascade into
+      // auto-completing (and thus force-winning) the rest of the board.
     }
 
     function togglePause() {
@@ -489,8 +498,8 @@
         var cxL = lw / 2;
         var cxR = boardLeft + S + rw / 2;
 
-        // Left panel: all 7 action buttons distributed across full viewport height.
-        var NBTN    = 7;
+        // Left panel: all 8 action buttons distributed across full viewport height.
+        var NBTN    = 8;
         var gap2    = Math.max(2, Math.floor(gap * 0.55));
         var edgePad = Math.max(gap, clamp(vh * 0.04, 6, 20));
         var bh9max  = Math.floor((vh - 2 * edgePad - (NBTN-1) * gap2) / NBTN);
@@ -505,8 +514,9 @@
         var diff     = { x: lx, y: y0 + 2*(bh9+gap2), w: bwL, h: bh9 };
         var timer    = { x: lx, y: y0 + 3*(bh9+gap2), w: bwL, h: bh9 };
         var undoBtn  = { x: lx, y: y0 + 4*(bh9+gap2), w: bwL, h: bh9 };
-        var hintBtn  = { x: lx, y: y0 + 5*(bh9+gap2), w: bwL, h: bh9 };
-        var notesBtn = { x: lx, y: y0 + 6*(bh9+gap2), w: bwL, h: bh9 };
+        var eraseBtn = { x: lx, y: y0 + 5*(bh9+gap2), w: bwL, h: bh9 };
+        var hintBtn  = { x: lx, y: y0 + 6*(bh9+gap2), w: bwL, h: bh9 };
+        var notesBtn = { x: lx, y: y0 + 7*(bh9+gap2), w: bwL, h: bh9 };
 
         // Right panel: 1×9 vertical numpad, keys sized to match board cells with a small gap.
         var numKeyGap = Math.max(3, Math.floor(cs * 0.08));
@@ -526,7 +536,7 @@
         return {
           panelMode: 'wide',
           finish: finish, newBtn: newBtn, diff: diff, timer: timer,
-          undoBtn: undoBtn, hintBtn: hintBtn, notesBtn: notesBtn,
+          undoBtn: undoBtn, eraseBtn: eraseBtn, hintBtn: hintBtn, notesBtn: notesBtn,
           numPad: numPad
         };
       }
@@ -559,20 +569,21 @@
         numPad.push({ n: n, x: mgx + col*(numW+gap), y: numStartY + row*(numH+gap), s: numH });
       }
 
-      // 3-button action row below numpad: NOTES | UNDO | HINT
+      // 4-button action row below numpad: NOTES | UNDO | ERASE | HINT
       var actY    = numStartY + 2*(numH+gap);
       var actBtnH = clamp(botH * 0.22, 20, 42);
-      var actBtnW = Math.floor((vw - 2*mgx - 2*gap) / 3);
+      var actBtnW = Math.floor((vw - 2*mgx - 3*gap) / 4);
       var notesBtn = { x: mgx,                    y: actY, w: actBtnW, h: actBtnH };
       var undoBtn  = { x: mgx + 1*(actBtnW+gap),  y: actY, w: actBtnW, h: actBtnH };
-      var hintBtn  = { x: mgx + 2*(actBtnW+gap),  y: actY, w: actBtnW, h: actBtnH };
+      var eraseBtn = { x: mgx + 2*(actBtnW+gap),  y: actY, w: actBtnW, h: actBtnH };
+      var hintBtn  = { x: mgx + 3*(actBtnW+gap),  y: actY, w: actBtnW, h: actBtnH };
 
       return {
         panelMode: 'stacked',
         finish: finish, diff: diff, timer: timer, newBtn: newBtn,
         numPad: numPad,
         notesBtn: notesBtn,
-        undoBtn: undoBtn, hintBtn: hintBtn
+        undoBtn: undoBtn, eraseBtn: eraseBtn, hintBtn: hintBtn
       };
     }
 
@@ -613,6 +624,12 @@
         if (inRect(pt.x, pt.y, cl.diff))    { cycleDiff();   return; }
         if (inRect(pt.x, pt.y, cl.timer))   { togglePause(); return; }
         if (inRect(pt.x, pt.y, cl.undoBtn)) { undo();        return; }
+        if (inRect(pt.x, pt.y, cl.eraseBtn)) {
+          // Clear the selected cell — but only a user-filled one; eraseCell
+          // itself refuses given clues, so the starting puzzle stays intact.
+          if (selected) eraseCell(selected.r, selected.c);
+          return;
+        }
         if (inRect(pt.x, pt.y, cl.hintBtn)) { giveHint();    return; }
         if (inRect(pt.x, pt.y, cl.notesBtn)) {
           if (notesHeld) {
@@ -816,6 +833,11 @@
       drawButton(cl.diff,    DIFFS[diffIdx].key, FG, false);
       drawButton(cl.timer,   ts,       paused ? AMBER : MUTED, paused);
       drawButton(cl.undoBtn, 'UNDO',   undoStack.length ? MUTED : DIM, false);
+      // ERASE is live only when a user-filled cell is selected (given clues and
+      // empty cells have nothing to clear).
+      var canErase = selected && !isGiven(selected.r, selected.c) &&
+                     board[selected.r*9+selected.c] !== 0;
+      drawButton(cl.eraseBtn, 'ERASE', canErase ? MUTED : DIM, false);
       drawButton(cl.hintBtn, 'HINT',   FG,    false);
       var notesHeldNow = notesPressId !== null && (clock - notesPressStart) >= NOTES_HOLD;
       var notesOn = fillMode === 'notes' || notesHeldNow;
