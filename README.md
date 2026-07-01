@@ -187,3 +187,20 @@ Swap two neighbouring gems to line up three or more of a kind in a row or column
 - A swap that makes no match springs back.
 
 The six gem types are told apart by **both colour and shape**, so they stay readable for everyone. The board never starts on a match and quietly reshuffles when no legal move remains. Stuck? **HINT** demonstrates a legal move by sliding the two gems together and back without committing it. Your best score is saved between sessions; the **robot icon** lets the computer play on its own.
+
+---
+
+### 🟡 Emopac
+
+Chomp your way through a maze full of pellets while a pack of emoji ghosts gives chase — 👹 😈 👽 👻. Clear every pellet to advance to the next level, a little faster each time.
+
+**Touch controls**
+- **Swipe** in a direction to steer. Your turn is remembered and taken the instant the corridor opens up, so you can line up the next corner early.
+- **Tap** ahead or off to one side to turn that way — handy for quick single turns.
+- Slip through the **side tunnel** to pop out the opposite edge and shake a ghost.
+
+**Turn the tables** — eat one of the four flashing **energizers** in the corners and the ghosts turn blue and flee. Catch them for a rising bonus (200, then 400, 800, 1600), and their eyes scurry back to their house to respawn. The blue flashes white just before it wears off, so watch the clock.
+
+**Bonus fruit** — a piece of fruit (🍒🍓🍊🍎…) appears near the middle twice per level. Grab it before it vanishes for extra points; the fruit gets more valuable the deeper you go.
+
+Each ghost hunts differently — one chases you head-on, one cuts ahead to ambush, one flanks, and one turns shy up close — so the maze plays differently every run. Three lives; your best score is saved between sessions. Tap **FINISH** (top-left) or press **Esc / Back / Home** to leave.

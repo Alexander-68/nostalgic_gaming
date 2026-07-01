@@ -8,7 +8,9 @@ touch-only, and playable at all three design ratios — 16:9, 9:8, 9:16).
 |------|-------|---------|-------|
 | Space Invaders | Fixed shooter (PvE) | 1 | First shooter. Drag-to-move + tap/auto fire. Grid scales to width. |
 | Frogger | Lane-crossing action | 1 | Swipe/tap lane movement. Rows scale naturally, and hazards are simple sprites with strong arcade recognition. |
-| Pac-Man | Maze chase | 1 vs AI | Highest recognition + real opponent AI, but the fixed maze is the hardest layout to fit across all three ratios. |
+| Asteroids | Free-flying vector shooter | 1 | Fills the 360° shooter slot (vs. Space Invaders' fixed formation). Screen-wrap tolerates any aspect, so it's a clean responsive-court fit. |
+| Simon | Memory / pattern repeat | 1 | New genre (memory). Four touch quadrants, no AI, trivial ratio fit — the catalogue's quickest remaining win. |
+| Solitaire (Klondike) | Card / patience | 1 | Fills the card-game slot. Tap-to-move + drag, no opponent. Tableau layout is the only real ratio challenge. |
 | Pinball | Physics table | 1–2 hot-seat | Best touch/multitouch story, but highest effort (custom physics) and worst landscape fit. Flagship/centerpiece, not a quick win. |
 
 Add the next idea here as a row (and a section below if it needs detail), then
@@ -34,11 +36,48 @@ The main risk is tuning density and speed so it feels fair on all ratios, but th
 technical model is modest: repeated lane objects moving at constant speeds, grid
 snapping for the frog, collision with cars, and carried motion on logs.
 
-### Pac-Man — maze chase (runner-up)
-Highest brand recognition of the lot and gives genuine opponent AI (four ghosts
-with distinct personalities). Swipe to steer. The catch is the fixed maze: it's
-the hardest thing to make look right across 16:9 / 9:8 / 9:16, so slot it after
-the cleaner-fitting games above, once you want to take on that layout challenge.
+### Asteroids — free-flying vector shooter
+A second shooter that plays nothing like Space Invaders: instead of a fixed
+formation descending, you free-fly a ship through a screen of drifting rocks that
+split into smaller, faster rocks when shot. The wrap-around playfield (everything
+that exits one edge re-enters the opposite) is exactly what makes it a clean
+responsive-court fit — the field simply *is* the viewport at any aspect, no
+letterbox, and wrap hides ratio differences instead of fighting them.
+
+Touch maps to a thrust/rotate/fire layout in the established multitouch style:
+left thumb rotates (a two-zone or arc control), right thumb thrusts and fires, and
+several fingers can be down at once (rotate + thrust + fire simultaneously), which
+leans on the same hardware Pong's paddles do. Vector look fits the catalogue's
+phosphor aesthetic. The one bit of real work is inertial physics — momentum,
+drift, and continuous collision for the fast bullets — but it's a much smaller
+engine than Pinball's, with axis-free circles rather than bespoke table surfaces.
+
+### Simon — memory / pattern repeat (quick win)
+The catalogue has no memory game, and this is the cheapest one to add. Four big
+coloured quadrants flash a growing sequence; the player taps it back; one mistake
+ends the run and the round count is the score. It's almost pure UI and timing —
+no physics, no AI, no opponent — and the four-quadrant layout fits all three
+ratios trivially (a centred square of pads with chrome in the leftover space, the
+same letterbox approach as the puzzle games). Audio is part of the identity here
+(each pad has a tone), generated with the Web Audio API so there are no asset
+files to load — `file://`-safe by construction. A good palette-cleanser between
+the heavier strategy and physics builds.
+
+### Solitaire (Klondike) — card / patience
+Fills the missing card-game genre with the most recognisable single-player card
+game there is. Seven tableau columns, four foundations, a stock/waste pile; build
+the foundations up by suit, build the tableau down in alternating colours. Input
+is touch-native: tap a card to auto-move it to a legal foundation, or drag a card
+(and the run beneath it) between columns; double-tap-to-auto-finish is a nice
+optional flourish. No opponent and no physics, so the complexity is all in the
+move rules and the deal/win bookkeeping — well-bounded, and the deck renders
+cleanly as drawn shapes/pips with zero external assets (`file://`-safe).
+
+The one real challenge is the tableau across ratios: seven overlapping columns
+want width, so 16:9 is native, 9:8 is comfortable, and **9:16 is the tight case** —
+narrower columns with tighter fan overlap, or a slightly reduced card size, to
+keep all seven readable. It's a layout-tuning problem, not a fixed-maze one (see
+the shipped Emopac for how that harder case was handled).
 
 ### Pinball — physics table (flagship / centerpiece)
 Best control story in the catalogue — left flipper = tap left half of screen,
@@ -80,6 +119,8 @@ weekend game.
   feel/UX reference.
 
 ## Shipped from this list
+
+- **Pac-Man** (shipped as **Emopac**) — built in `games/emopac/`. Single-player maze chase on the classic 28×31 board with a wrap-around side tunnel, four energizers, and a bonus-fruit slot. The cast is emoji: four distinct monster ghosts — 👹 Blinky (chaser), 😈 Pinky (ambush, 4 tiles ahead), 👽 Inky (flank, Blinky-reflected vector), 👻 Clyde (shy inside 8 tiles) — each with an identifying colour glow, turning 🥶 when frightened (flashing white before it wears off) and 👀 (eyes) racing home when eaten. Pac himself is a chomping canvas wedge so his facing always reads. Classic scatter/chase phase schedule with reverse-on-change, per-ghost targeting, staggered house release, and tunnel slowdown. Swipe to steer (buffered to the next tile centre; instant U-turns) or tap to turn toward a point. Energizer → ghosts flee and are edible for a doubling 200/400/800/1600 chain; clear every pellet to advance a level (speeds ramp). Best score persists via `localStorage`. Fixed-ratio letterbox — the maze plus a top score band and bottom lives/fruit band render to one logical grid, contain-fit and centred at all three ratios (the fixed-maze layout challenge this entry warned about, solved with side letterboxing in 16:9). Maze connectivity, geometry, and core mechanics verified headlessly under Node.
 
 - **Connect Four** — built in `games/connect-four/`. Drop-disc strategy on a 7×6 grid. Tap a column to drop your disc to the lowest open slot (gravity fall + a single damped bounce); a pulsing ghost disc previews the hovered column. Win on four in a row — horizontal, vertical, or either diagonal — with the winning four lit by pulsing rings and the game-over banner held until the last disc settles. Two robot-icon toggles (same convention as Gomoku/Reversi) give solo vs. AI, pass-and-play, and computer-vs-computer. AI is minimax with alpha-beta pruning at depth 6, centre-first move ordering, immediate-win cutoff, and a window-scan heuristic with a defence bias. NEW / UNDO / FINISH chrome. Fixed-ratio letterbox — side panels in landscape/9:8, top/bottom bands in portrait.
 
