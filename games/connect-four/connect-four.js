@@ -194,6 +194,7 @@
     var state, result;                  // 'playing' | 'over' ; result {winner|draw, cells}
     var scores = [0, 0, 0];
     var scored = false;
+    var streakStats = null;             // {streak, best, isNew} — set on game over vs computer
     var dropAnims = [];                 // {col, row, player, started}
     var hoverCol = -1;
 
@@ -221,6 +222,18 @@
       scheduleAI();
     }
 
+    // Win streak vs the computer — only meaningful when exactly one side is AI,
+    // so a 2-human or computer-vs-computer game leaves the record untouched.
+    function recordStreak(winner) {
+      var aiCount = (aiFlags[0] ? 1 : 0) + (aiFlags[1] ? 1 : 0);
+      if (aiCount !== 1) { streakStats = null; return; }
+      var human = aiFlags[0] ? 2 : 1;
+      var streak = winner === human ? NG.storage.get('ng_connect4_streak', 0) + 1 : 0;
+      NG.storage.set('ng_connect4_streak', streak);
+      var rec = NG.bestScore('ng_connect4_best_streak', streak);
+      streakStats = { streak: streak, best: rec.best, isNew: rec.isNew && streak > 0 };
+    }
+
     function recordResult(res) {
       result = res;
       state = 'over';
@@ -229,6 +242,7 @@
         scored = true;
         if (res.winner) scores[res.winner]++;
       }
+      recordStreak(res.winner || null);
     }
 
     function placeDisc(col) {
@@ -691,11 +705,20 @@
         ctx.shadowBlur = 0;
       }
 
+      if (streakStats) {
+        ctx.fillStyle = streakStats.isNew ? YELC : MUTED;
+        ctx.font = 'bold ' + (unit * 0.032).toFixed(0) + 'px "Courier New", monospace';
+        ctx.fillText(
+          (streakStats.isNew ? 'NEW BEST STREAK ' : 'STREAK ' + streakStats.streak + '   BEST ') + streakStats.best,
+          cx, cy + unit * 0.02
+        );
+      }
+
       var pulse = 0.55 + 0.45 * Math.abs(Math.sin(clock * 2.2));
       ctx.globalAlpha = pulse;
       ctx.fillStyle = INK;
       ctx.font = 'bold ' + (unit * 0.04).toFixed(0) + 'px "Courier New", monospace';
-      ctx.fillText('TAP TO PLAY AGAIN', cx, cy + unit * 0.055);
+      ctx.fillText('TAP TO PLAY AGAIN', cx, cy + unit * 0.085);
       ctx.globalAlpha = 1;
     }
 

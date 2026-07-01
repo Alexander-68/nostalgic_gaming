@@ -92,6 +92,7 @@
     var bricks = [];                  // { row, col, alive, tier, color, points }
     var bricksLeft = 0;
     var score = 0, lives = START_LIVES, level = 1;
+    var bestStats = null;             // {best, isNew} — set on game over
     var paddle = { cx: 0, w: 0, h: 0, y: 0 };
     var ball = { x: 0, y: 0, vx: 0, vy: 0, r: 0, speed: 0 };
     var trail = [];                   // recent ball positions, for the comet tail
@@ -237,7 +238,11 @@
     }
     function loseLife() {
       lives--;
-      if (lives <= 0) { state = 'over'; NG.setPlaying(false); }
+      if (lives <= 0) {
+        state = 'over';
+        NG.setPlaying(false);
+        bestStats = NG.bestScore('ng_breakout_best', score);
+      }
       else resetBallReady();
     }
     function winLevel() { state = 'won'; wonTimer = 0; NG.setPlaying(false); }
@@ -671,8 +676,13 @@
         drawCenter([
           { text: 'GAME OVER', size: big, color: '#ff5d6c', glow: true },
           { text: 'SCORE ' + score, size: small, color: INK },
+          bestStats && {
+            text: (bestStats.isNew ? 'NEW BEST ' : 'BEST ') + bestStats.best,
+            size: small * 0.8,
+            color: bestStats.isNew ? '#ffcf4d' : MUTED,
+          },
           { text: aiOn ? 'AI RESTARTING…' : 'TAP TO PLAY AGAIN', size: small, color: INK, alpha: pulse },
-        ]);
+        ].filter(Boolean));
       }
       ctx.shadowBlur = 0;
     }

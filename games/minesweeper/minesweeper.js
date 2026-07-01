@@ -154,6 +154,7 @@
   var INK = '#d6f7e4';    // neutral text
   var MUTED = '#6b7a72';  // secondary text
   var FLAG = '#ff5d6c';   // flag red
+  var AMBER = '#ffcf4d';  // "new best" accent
   var PANEL = '#0a1410';  // field backing
   var RAISED = '#22633c'; // unrevealed cell face (kept bright so it reads clearly)
   var RAISED_PRESS = '#2e7d4d'; // unrevealed cell while held under a finger
@@ -194,6 +195,7 @@
     var clock = 0;                            // wall clock for animation / timer
     var anchors = Object.create(null);        // pointer id -> gesture state
     var pressCell = null;                     // {x,y} cell under a finger, for feedback
+    var winStats = null;                      // {best, isNew} — set on win, per difficulty
 
     function at(x, y) { return board[y * N + x]; }
 
@@ -307,7 +309,7 @@
       N = d.n; mineCount = d.mines;
       board = makeBoard(N);
       state = 'play'; started = false; flags = 0;
-      startClock = 0; finalTime = 0; explode = null; pressCell = null;
+      startClock = 0; finalTime = 0; explode = null; pressCell = null; winStats = null;
       relayout();                                     // cell size depends on N
     }
     function cycleDiff() { diffIdx = (diffIdx + 1) % DIFFS.length; newGame(); }
@@ -372,6 +374,7 @@
         if (board[i].mine && !board[i].flagged) { board[i].flagged = true; }
       }
       flags = mineCount;
+      winStats = NG.bestTime('ng_minesweeper_best_' + DIFFS[diffIdx].key.toLowerCase(), finalTime);
     }
 
     // ---- input -------------------------------------------------------------
@@ -720,9 +723,17 @@
       ctx.fillStyle = INK;
       ctx.font = 'bold ' + (unit * 0.035).toFixed(0) + 'px "Courier New", monospace';
       ctx.fillText(won ? 'TIME ' + pad3(finalTime) + 'S' : 'YOU HIT A MINE', cx, cy + unit * 0.02);
+      if (won && winStats) {
+        ctx.fillStyle = winStats.isNew ? AMBER : MUTED;
+        ctx.font = 'bold ' + (unit * 0.03).toFixed(0) + 'px "Courier New", monospace';
+        ctx.fillText(
+          (winStats.isNew ? 'NEW BEST  ' : 'BEST  ') + pad3(winStats.best) + 'S',
+          cx, cy + unit * 0.055
+        );
+      }
       ctx.globalAlpha = pulse; ctx.fillStyle = INK;
       ctx.font = 'bold ' + (unit * 0.04).toFixed(0) + 'px "Courier New", monospace';
-      ctx.fillText('TAP TO PLAY AGAIN', cx, cy + unit * 0.085);
+      ctx.fillText('TAP TO PLAY AGAIN', cx, cy + (won && winStats ? unit * 0.115 : unit * 0.085));
       ctx.globalAlpha = 1;
     }
 

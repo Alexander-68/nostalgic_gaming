@@ -315,6 +315,7 @@
     var numPlayers = 1;
     var wells = [];
     var result = null;             // {solo:true} | {winner: playerNo}
+    var bestStats = null;          // {best, isNew} — set on solo game over
     var clock = 0;                 // wall clock for pulses / flashes
     var ptrs = Object.create(null);// pointer id -> gesture tracker
 
@@ -426,7 +427,7 @@
     function setDead(w) {
       if (w.dead) return;
       w.dead = true; w.type = null;
-      if (numPlayers === 1) { result = { solo: true }; }
+      if (numPlayers === 1) { result = { solo: true }; bestStats = NG.bestScore('ng_tetris_best', w.score); }
       else { result = { winner: otherWell(w).player }; }
       state = 'over';
       // Game's over: cancel every well's pending computer move so nothing keeps
@@ -1113,6 +1114,10 @@
       if (numPlayers === 1 && wells[0]) {
         label('SCORE ' + wells[0].score + '   LINES ' + wells[0].lines,
           cx, vh * 0.45, unit * 0.04, INK, 'center', 'middle');
+        if (bestStats) {
+          label((bestStats.isNew ? 'NEW BEST ' : 'BEST ') + bestStats.best,
+            cx, vh * 0.51, unit * 0.032, bestStats.isNew ? '#ffcf4d' : MUTED, 'center', 'middle');
+        }
       }
       var ob = overButtons();
       drawButton(ob.again, 'PLAY AGAIN', FG);

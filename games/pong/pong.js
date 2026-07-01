@@ -64,6 +64,8 @@
     var trail = [];                    // recent ball positions, for the curve comet tail
     var state = 'ready';               // 'ready' | 'playing' | 'over'
     var winner = -1;
+    var rally = 0, matchBestRally = 0; // paddle hits in the current point / match
+    var rallyStats = null;             // {best, isNew} — set when a match ends
     var started = false;
     var touch = null;                  // NG.createTouch controller (assigned below)
     var mouseLock = { active: false, side: -1, cross: 0 };  // mouse lock-on (set up below)
@@ -136,6 +138,7 @@
     function newGame() {
       p0.score = p1.score = 0;
       winner = -1;
+      rally = 0; matchBestRally = 0; rallyStats = null;
       resetBall(Math.random() < 0.5 ? 1 : -1);
       state = 'ready';
       NG.setPlaying(false);
@@ -261,11 +264,14 @@
       // for both a human drag and the AI's flick sweep. A still paddle => no spin.
       ball.spin = clamp(SPIN_FROM_PADDLE * p.vel * sign, -MAX_SPEED, MAX_SPEED);
       p.aimBias = aiBias();           // next AI return from this paddle aims somewhere new
+      rally++;
+      if (rally > matchBestRally) matchBestRally = rally;
     }
 
     function afterPoint(dir) {
-      if (p0.score >= WIN_SCORE) { winner = 0; state = 'over'; }
-      else if (p1.score >= WIN_SCORE) { winner = 1; state = 'over'; }
+      rally = 0;
+      if (p0.score >= WIN_SCORE) { winner = 0; state = 'over'; rallyStats = NG.bestScore('ng_pong_best_rally', matchBestRally); }
+      else if (p1.score >= WIN_SCORE) { winner = 1; state = 'over'; rallyStats = NG.bestScore('ng_pong_best_rally', matchBestRally); }
       else { resetBall(dir); state = 'ready'; }
       NG.setPlaying(false);          // bring the FINISH button back between points / on game over
     }
@@ -409,8 +415,17 @@
       } else if (state === 'over') {
         ctx.font = 'bold ' + (crossLen * 0.09).toFixed(0) + 'px "Courier New", monospace';
         ctx.fillText('PLAYER ' + (winner + 1) + ' WINS', courtW / 2, courtH / 2 - crossLen * 0.06);
+        if (rallyStats) {
+          ctx.fillStyle = rallyStats.isNew ? SPIN_C : FG;
+          ctx.font = 'bold ' + (crossLen * 0.04).toFixed(0) + 'px "Courier New", monospace';
+          ctx.fillText(
+            (rallyStats.isNew ? 'NEW BEST RALLY ' : 'BEST RALLY ') + rallyStats.best,
+            courtW / 2, courtH / 2
+          );
+          ctx.fillStyle = FG;
+        }
         ctx.font = 'bold ' + (crossLen * 0.06).toFixed(0) + 'px "Courier New", monospace';
-        ctx.fillText('TAP TO REMATCH', courtW / 2, courtH / 2 + crossLen * 0.06);
+        ctx.fillText('TAP TO REMATCH', courtW / 2, courtH / 2 + crossLen * 0.09);
       }
       ctx.shadowBlur = 0;
     }

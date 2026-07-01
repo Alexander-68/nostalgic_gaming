@@ -180,4 +180,48 @@
   NG.setPlaying = function (on) {
     if (document.body) document.body.classList.toggle('ng-playing', !!on);
   };
+
+  // ---------------------------------------------------------------------------
+  // Best score / best time — local persistence via localStorage.
+  //
+  // Games have no server/networking, so "best" is always this player, this
+  // browser: localStorage survives reloads over both file:// and HTTP (unlike
+  // fetch/CORS-governed APIs, it isn't blocked on file://) and needs no consent
+  // banner the way cookies would. Keys should be namespaced per game, e.g.
+  // 'ng_<game>_best' or 'ng_<game>_best_<variant>' for per-difficulty records.
+  // ---------------------------------------------------------------------------
+  NG.storage = {
+    get: function (key, fallback) {
+      try {
+        var v = localStorage.getItem(key);
+        return v === null ? fallback : JSON.parse(v);
+      } catch (e) { return fallback; }
+    },
+    set: function (key, value) {
+      try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
+    }
+  };
+
+  /**
+   * Record a score where higher is better (arcade-style). Returns
+   * {best, isNew}: `best` is the record after this call, `isNew` marks
+   * whether `score` just beat the previous one.
+   */
+  NG.bestScore = function (key, score) {
+    var prev = NG.storage.get(key, 0);
+    var isNew = score > prev;
+    if (isNew) NG.storage.set(key, score);
+    return { best: isNew ? score : prev, isNew: isNew };
+  };
+
+  /**
+   * Record a time (seconds) where lower is better (puzzle-solve / clear
+   * time). Returns {best, isNew} like NG.bestScore.
+   */
+  NG.bestTime = function (key, time) {
+    var prev = NG.storage.get(key, null);
+    var isNew = prev === null || time < prev;
+    if (isNew) NG.storage.set(key, time);
+    return { best: isNew ? time : prev, isNew: isNew };
+  };
 })(window);

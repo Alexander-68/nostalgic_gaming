@@ -189,6 +189,7 @@
     var aiFlags = [false, false];
     var aiGen = 0, clock = 0;
     var state, result;
+    var streakStats = null;    // {streak, best, isNew} — set on game over vs computer
     var passing = 0;      // player number whose turn was skipped (display only)
     var passShown = 0;    // clock value when passing was set (for toast timeout)
     var flipAnims = [];   // {x, y, from, to, started} — coin-flip disc transitions
@@ -217,12 +218,25 @@
       scheduleAI();
     }
 
+    // Win streak vs the computer — only meaningful when exactly one side is AI,
+    // so a 2-human or computer-vs-computer game leaves the record untouched.
+    function recordStreak(winner) {
+      var aiCount = (aiFlags[0] ? 1 : 0) + (aiFlags[1] ? 1 : 0);
+      if (aiCount !== 1) { streakStats = null; return; }
+      var human = aiFlags[0] ? 2 : 1;
+      var streak = winner === human ? NG.storage.get('ng_reversi_streak', 0) + 1 : 0;
+      NG.storage.set('ng_reversi_streak', streak);
+      var rec = NG.bestScore('ng_reversi_best_streak', streak);
+      streakStats = { streak: streak, best: rec.best, isNew: rec.isNew && streak > 0 };
+    }
+
     function endGame() {
       state = 'over';
       var c = countDiscs(board);
       if (c[1] > c[2]) result = { winner: 1 };
       else if (c[2] > c[1]) result = { winner: 2 };
       else result = { draw: true };
+      recordStreak(result.winner || null);
     }
 
     // After a disc is placed, determine whose turn comes next.
@@ -704,11 +718,20 @@
         ctx.shadowBlur = 0;
       }
 
+      if (streakStats) {
+        ctx.fillStyle = streakStats.isNew ? P2C : MUTED;
+        ctx.font = 'bold ' + (unit * 0.032).toFixed(0) + 'px "Courier New", monospace';
+        ctx.fillText(
+          (streakStats.isNew ? 'NEW BEST STREAK ' : 'STREAK ' + streakStats.streak + '   BEST ') + streakStats.best,
+          cx, cy + unit * 0.02
+        );
+      }
+
       var pulse = 0.55 + 0.45 * Math.abs(Math.sin(clock * 2.2));
       ctx.globalAlpha = pulse;
       ctx.fillStyle = INK;
       ctx.font = 'bold ' + (unit * 0.04).toFixed(0) + 'px "Courier New", monospace';
-      ctx.fillText('TAP TO PLAY AGAIN', cx, cy + unit * 0.055);
+      ctx.fillText('TAP TO PLAY AGAIN', cx, cy + unit * 0.085);
       ctx.globalAlpha = 1;
     }
 

@@ -255,6 +255,7 @@
     var result = null;                       // {winner} | {draw:true}
     var winLine = null;                      // array of [x,y] on victory
     var aiFlags = [false, false];            // which side (P1,P2) is computer-driven
+    var streakStats = null;                  // {streak, best, isNew} — set on game over vs computer
     var aiGen = 0;                           // invalidates stale scheduled AI turns
     var clock = 0;                           // wall clock for pulsing / pop animation
     var anchors = Object.create(null);       // pointer id -> { sx, sy, moved, handled }
@@ -372,6 +373,18 @@
       refreshAI();
     }
 
+    // Win streak vs the computer — only meaningful when exactly one side is AI,
+    // so a 2-human or computer-vs-computer game leaves the record untouched.
+    function recordStreak(winner) {
+      var aiCount = (aiFlags[0] ? 1 : 0) + (aiFlags[1] ? 1 : 0);
+      if (aiCount !== 1) { streakStats = null; return; }
+      var human = aiFlags[0] ? 2 : 1;
+      var streak = winner === human ? NG.storage.get('ng_gomoku_streak', 0) + 1 : 0;
+      NG.storage.set('ng_gomoku_streak', streak);
+      var rec = NG.bestScore('ng_gomoku_best_streak', streak);
+      streakStats = { streak: streak, best: rec.best, isNew: rec.isNew && streak > 0 };
+    }
+
     function placeStone(x, y) {
       var p = turn();
       board[idx(x, y)] = p;
@@ -379,8 +392,8 @@
       lastMove = { x: x, y: y, p: p };
       preview = null;
       var line = winningLine(board, x, y, p);
-      if (line) { result = { winner: p }; winLine = line; state = 'over'; return; }
-      if (moves.length >= N * N) { result = { draw: true }; state = 'over'; return; }
+      if (line) { result = { winner: p }; winLine = line; state = 'over'; recordStreak(p); return; }
+      if (moves.length >= N * N) { result = { draw: true }; state = 'over'; recordStreak(null); return; }
       refreshAI();
     }
 
@@ -703,7 +716,7 @@
       // Anchor the banner clear of the winning line: drop it into whichever band
       // (above or below the line) has more room, so the text never sits on top of
       // the highlighted five. (A draw has no line, so it stays centred.)
-      var cyText = vh / 2, half = unit * 0.12;
+      var cyText = vh / 2, half = unit * 0.14;
       if (winLine) {
         var lineTop = Math.min(a.y, z.y) - g, lineBot = Math.max(a.y, z.y) + g, mg = unit * 0.05;
         if (lineTop - mg >= (vh - mg) - lineBot) cyText = clamp((mg + lineTop) / 2, mg + half, lineTop - half);
@@ -722,10 +735,19 @@
         ctx.fillText('PLAYER ' + result.winner + ' WINS', cx, cyText - unit * 0.045);
         ctx.shadowBlur = 0;
       }
+      if (streakStats) {
+        ctx.globalAlpha = 1; ctx.fillStyle = streakStats.isNew ? P2 : MUTED;
+        ctx.font = 'bold ' + (unit * 0.032).toFixed(0) + 'px "Courier New", monospace';
+        ctx.fillText(
+          (streakStats.isNew ? 'NEW BEST STREAK ' : 'STREAK ' + streakStats.streak + '   BEST ') + streakStats.best,
+          cx, cyText + unit * 0.02
+        );
+      }
+
       var pulse2 = 0.55 + 0.45 * Math.abs(Math.sin(clock * 2.2));
       ctx.globalAlpha = pulse2; ctx.fillStyle = INK;
       ctx.font = 'bold ' + (unit * 0.04).toFixed(0) + 'px "Courier New", monospace';
-      ctx.fillText('TAP TO PLAY AGAIN', cx, cyText + unit * 0.055);
+      ctx.fillText('TAP TO PLAY AGAIN', cx, cyText + unit * 0.085);
       ctx.globalAlpha = 1;
     }
 

@@ -591,7 +591,7 @@
       state = 'over';
       NG.setPlaying(false);
       if (mode === 'solo') {
-        result = { type: 'solo', score: snakes[0].score };
+        result = { type: 'solo', score: snakes[0].score, best: NG.bestScore('ng_snake_best', snakes[0].score) };
         return;
       }
       var a = snakes[0], b = snakes[1];
@@ -794,6 +794,9 @@
         ctx.shadowBlur = 0; ctx.fillStyle = INK;
         ctx.font = 'bold ' + small.toFixed(0) + 'px "Courier New", monospace';
         ctx.fillText('SCORE  ' + result.score, cx, cy);
+        ctx.fillStyle = result.best.isNew ? P2 : MUTED;
+        ctx.font = 'bold ' + (small * 0.8).toFixed(0) + 'px "Courier New", monospace';
+        ctx.fillText((result.best.isNew ? 'NEW BEST  ' : 'BEST  ') + result.best.best, cx, cy + cell * 0.55);
       } else if (result.type === 'draw') {
         ctx.fillStyle = INK;
         ctx.font = 'bold ' + big.toFixed(0) + 'px "Courier New", monospace';
