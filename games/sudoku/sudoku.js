@@ -6,14 +6,19 @@
  *   - fixed-ratio letterbox: the 9×9 grid is a square; chrome lives in the
  *     leftover space (side panels in landscape, top/bottom bands in portrait).
  *   - touch-first: tap a cell to select it, then tap the number pad to fill.
- *     ERASE clears the cell; FILL/NOTES toggle switches between placing digits
- *     and pencilling in candidates.
+ *     ERASE clears the cell; separate FILL and NOTES keys switch between
+ *     placing digits and pencilling in candidates; C.FILL enables
+ *     continuously filling cells with the highlighted digit on tap.
  *   - three difficulties (EASY / MED / HARD), each generating a puzzle with a
  *     unique solution via backtracking + MRV + uniqueness verification.
+ *   - on solve: shows total time, this difficulty's best (shortest) time, and
+ *     the percentage of this player's own past rounds (at this difficulty)
+ *     the run was faster than — tracked locally via localStorage, since the
+ *     game has no server/networking to compare against other players.
  *
  * Keyboard (desktop dev): arrows to navigate, 1–9 to fill, Del to erase,
  * N for new game, F to toggle fill/notes mode, D to cycle difficulty,
- * U to undo, H for hint, A to toggle autoFill, P to pause.
+ * U to undo, H for hint, A to toggle continuous-fill, P to pause.
  */
 (function () {
   'use strict';
@@ -185,12 +190,43 @@
     var selected = null;
     var gameState = 'play';    // 'play' | 'won'
     var fillMode = 'fill';     // 'fill' | 'notes'
-    var autoFill = false;      // continuous-fill mode
+    var contFill = false;      // continuous-fill mode: tap a cell to instantly place the highlighted digit
     var conflicts = {};
     var highlightNum = 0;
     var timerStarted = false, startClock = 0, finalTime = 0;
     var paused = false, pauseStart = 0, totalPaused = 0;
     var undoStack = [];        // [{cellIdx, oldVal, oldNotes, wasHint}]
+    var winStats = null;       // {best, isNewBest, percentile, priorCount} — set on solve
+
+    // ---- per-difficulty completion-time history (localStorage) --------------
+    function timesKey(idx) { return 'ng_sudoku_times_' + DIFFS[idx].key.toLowerCase(); }
+
+    function loadTimes(idx) {
+      try {
+        var arr = JSON.parse(localStorage.getItem(timesKey(idx)) || '[]');
+        return Array.isArray(arr) ? arr : [];
+      } catch (e) { return []; }
+    }
+
+    // Records a completed time, returns stats vs. this player's own history at this difficulty.
+    function recordTime(idx, time) {
+      var arr = loadTimes(idx);
+      var priorCount = arr.length, beaten = 0, i;
+      for (i = 0; i < arr.length; i++) if (arr[i] > time) beaten++;
+      var priorBest = priorCount ? Math.min.apply(Math, arr) : null;
+      var isNewBest = priorBest === null || time < priorBest;
+
+      arr.push(time);
+      if (arr.length > 500) arr = arr.slice(arr.length - 500);
+      try { localStorage.setItem(timesKey(idx), JSON.stringify(arr)); } catch (e) {}
+
+      return {
+        best: isNewBest ? time : priorBest,
+        isNewBest: isNewBest,
+        priorCount: priorCount,
+        percentile: priorCount ? Math.round((beaten / priorCount) * 100) : null
+      };
+    }
 
     function makeNotes() {
       var n = [], i;
@@ -208,7 +244,7 @@
       selected = null;
       gameState    = 'play';
       fillMode     = 'fill';
-      autoFill     = false;
+      contFill     = false;
       conflicts    = {};
       highlightNum = 0;
       timerStarted = false;
@@ -218,6 +254,7 @@
       pauseStart   = 0;
       totalPaused  = 0;
       undoStack    = [];
+      winStats     = null;
     }
 
     function elapsed() {
@@ -233,6 +270,8 @@
 
     function isGiven(r, c) { return puzzle[r*9+c] !== 0; }
 
+    function fmtTime(t) { return Math.floor(t/60) + ':' + ('0'+(t%60)).slice(-2); }
+
     function clearNotesPeerCells(r, c, n) {
       var i, br, bc, dr, dc;
       br = ((r/3)|0)*3; bc = ((c/3)|0)*3;
@@ -246,6 +285,7 @@
         // Compute finalTime BEFORE changing gameState so elapsed() works correctly.
         var pauseOffset = paused ? (clock - pauseStart) : 0;
         finalTime = Math.floor(clock - startClock - totalPaused - pauseOffset);
+        winStats = recordTime(diffIdx, finalTime);
         gameState = 'won';
       }
     }
@@ -373,25 +413,27 @@
         var cxL = lw / 2;
         var cxR = boardLeft + S + rw / 2;
 
-        // Left panel: all 9 action buttons distributed across full viewport height.
+        // Left panel: all 10 action buttons distributed across full viewport height.
+        var NBTN    = 10;
         var gap2    = Math.max(2, Math.floor(gap * 0.55));
         var edgePad = Math.max(gap, clamp(vh * 0.04, 6, 20));
-        var bh9max  = Math.floor((vh - 2 * edgePad - 8 * gap2) / 9);
-        var bh9     = Math.min(clamp(unit * 0.065, 24, 52), bh9max);
+        var bh9max  = Math.floor((vh - 2 * edgePad - (NBTN-1) * gap2) / NBTN);
+        var bh9     = Math.min(clamp(unit * 0.065, 22, 52), bh9max);
         var bwL     = clamp(lw * 0.88, 60, 220);
         var lx      = Math.floor(cxL - bwL / 2);
-        var totalBH = 9 * bh9 + 8 * gap2;
+        var totalBH = NBTN * bh9 + (NBTN-1) * gap2;
         var y0      = Math.floor((vh - totalBH) / 2);
 
-        var finish  = { x: lx, y: y0 + 0*(bh9+gap2), w: bwL, h: bh9 };
-        var newBtn  = { x: lx, y: y0 + 1*(bh9+gap2), w: bwL, h: bh9 };
-        var diff    = { x: lx, y: y0 + 2*(bh9+gap2), w: bwL, h: bh9 };
-        var timer   = { x: lx, y: y0 + 3*(bh9+gap2), w: bwL, h: bh9 };
-        var undoBtn = { x: lx, y: y0 + 4*(bh9+gap2), w: bwL, h: bh9 };
-        var hintBtn = { x: lx, y: y0 + 5*(bh9+gap2), w: bwL, h: bh9 };
-        var erase   = { x: lx, y: y0 + 6*(bh9+gap2), w: bwL, h: bh9 };
-        var modeBtn = { x: lx, y: y0 + 7*(bh9+gap2), w: bwL, h: bh9 };
-        var autoBtn = { x: lx, y: y0 + 8*(bh9+gap2), w: bwL, h: bh9 };
+        var finish   = { x: lx, y: y0 + 0*(bh9+gap2), w: bwL, h: bh9 };
+        var newBtn   = { x: lx, y: y0 + 1*(bh9+gap2), w: bwL, h: bh9 };
+        var diff     = { x: lx, y: y0 + 2*(bh9+gap2), w: bwL, h: bh9 };
+        var timer    = { x: lx, y: y0 + 3*(bh9+gap2), w: bwL, h: bh9 };
+        var undoBtn  = { x: lx, y: y0 + 4*(bh9+gap2), w: bwL, h: bh9 };
+        var hintBtn  = { x: lx, y: y0 + 5*(bh9+gap2), w: bwL, h: bh9 };
+        var erase    = { x: lx, y: y0 + 6*(bh9+gap2), w: bwL, h: bh9 };
+        var fillBtn  = { x: lx, y: y0 + 7*(bh9+gap2), w: bwL, h: bh9 };
+        var notesBtn = { x: lx, y: y0 + 8*(bh9+gap2), w: bwL, h: bh9 };
+        var contBtn  = { x: lx, y: y0 + 9*(bh9+gap2), w: bwL, h: bh9 };
 
         // Right panel: 1×9 vertical numpad, keys sized to match board cells with a small gap.
         var numKeyGap = Math.max(3, Math.floor(cs * 0.08));
@@ -412,7 +454,7 @@
           panelMode: 'wide',
           finish: finish, newBtn: newBtn, diff: diff, timer: timer,
           undoBtn: undoBtn, hintBtn: hintBtn,
-          erase: erase, modeBtn: modeBtn, autoBtn: autoBtn,
+          erase: erase, fillBtn: fillBtn, notesBtn: notesBtn, contBtn: contBtn,
           numPad: numPad
         };
       }
@@ -446,20 +488,22 @@
       }
       var erase = { x: mgx + 4*(numW+gap), y: numStartY + numH + gap, w: numW, h: numH };
 
-      // 4-button action row below numpad: FILL/NOTES | AUTO | UNDO | HINT
+      // 5-button action row below numpad: FILL | NOTES | C.FILL | UNDO | HINT
       var actY    = numStartY + 2*(numH+gap);
-      var actBtnH = clamp(botH * 0.22, 22, 42);
-      var actBtnW = Math.floor((vw - 2*mgx - 3*gap) / 4);
-      var modeBtn = { x: mgx,                    y: actY, w: actBtnW, h: actBtnH };
-      var autoBtn = { x: mgx + actBtnW + gap,     y: actY, w: actBtnW, h: actBtnH };
-      var undoBtn = { x: mgx + 2*(actBtnW+gap),  y: actY, w: actBtnW, h: actBtnH };
-      var hintBtn = { x: mgx + 3*(actBtnW+gap),  y: actY, w: actBtnW, h: actBtnH };
+      var actBtnH = clamp(botH * 0.22, 20, 42);
+      var actBtnW = Math.floor((vw - 2*mgx - 4*gap) / 5);
+      var fillBtn  = { x: mgx,                    y: actY, w: actBtnW, h: actBtnH };
+      var notesBtn = { x: mgx + 1*(actBtnW+gap),  y: actY, w: actBtnW, h: actBtnH };
+      var contBtn  = { x: mgx + 2*(actBtnW+gap),  y: actY, w: actBtnW, h: actBtnH };
+      var undoBtn  = { x: mgx + 3*(actBtnW+gap),  y: actY, w: actBtnW, h: actBtnH };
+      var hintBtn  = { x: mgx + 4*(actBtnW+gap),  y: actY, w: actBtnW, h: actBtnH };
 
       return {
         panelMode: 'stacked',
         finish: finish, diff: diff, timer: timer, newBtn: newBtn,
         numPad: numPad, erase: erase,
-        modeBtn: modeBtn, autoBtn: autoBtn, undoBtn: undoBtn, hintBtn: hintBtn
+        fillBtn: fillBtn, notesBtn: notesBtn, contBtn: contBtn,
+        undoBtn: undoBtn, hintBtn: hintBtn
       };
     }
 
@@ -492,12 +536,10 @@
         if (inRect(pt.x, pt.y, cl.timer))   { togglePause(); return; }
         if (inRect(pt.x, pt.y, cl.undoBtn)) { undo();        return; }
         if (inRect(pt.x, pt.y, cl.hintBtn)) { giveHint();    return; }
-        if (inRect(pt.x, pt.y, cl.modeBtn)) {
-          fillMode = (fillMode === 'fill') ? 'notes' : 'fill';
-          return;
-        }
-        if (inRect(pt.x, pt.y, cl.autoBtn)) {
-          autoFill = !autoFill;
+        if (inRect(pt.x, pt.y, cl.fillBtn))  { fillMode = 'fill';  return; }
+        if (inRect(pt.x, pt.y, cl.notesBtn)) { fillMode = 'notes'; return; }
+        if (inRect(pt.x, pt.y, cl.contBtn)) {
+          contFill = !contFill;
           return;
         }
         if (inRect(pt.x, pt.y, cl.erase)) {
@@ -518,8 +560,8 @@
         var cell = cellAt(pt.x, pt.y);
         if (cell) {
           startTimer();
-          if (autoFill && highlightNum) {
-            // In autoFill mode: tap cell → instantly fill (or add note) with highlighted digit.
+          if (contFill && highlightNum) {
+            // In continuous-fill mode: tap cell → instantly fill (or add note) with highlighted digit.
             if (fillMode === 'notes') {
               if (!isGiven(cell.r, cell.c)) {
                 var cellIdx = cell.r*9+cell.c;
@@ -551,7 +593,7 @@
       if (k === 'n') { newGame();   return; }
       if (k === 'd') { cycleDiff(); return; }
       if (k === 'f') { fillMode = (fillMode==='fill')?'notes':'fill'; return; }
-      if (k === 'a') { autoFill = !autoFill; return; }
+      if (k === 'a') { contFill = !contFill; return; }
       if (k === 'u') { undo();      return; }
       if (k === 'h') { giveHint();  return; }
       if (k === 'p') { togglePause(); return; }
@@ -568,8 +610,8 @@
       if (k === 'arrowright') { ev.preventDefault(); selected = { r: selected.r, c: Math.min(8,selected.c+1) }; return; }
       if (k === 'backspace' || k === 'delete' || k === '0') { eraseCell(selected.r, selected.c); return; }
       if (k === ' ') {
-        // Space in autoFill mode: fill selected cell with highlighted digit
-        if (autoFill && highlightNum && selected) {
+        // Space in continuous-fill mode: fill selected cell with highlighted digit
+        if (contFill && highlightNum && selected) {
           ev.preventDefault();
           fillCell(selected.r, selected.c, highlightNum);
         }
@@ -692,7 +734,7 @@
 
     function drawChrome(cl) {
       var t  = elapsed();
-      var ts = paused ? 'PAUSED' : (Math.floor(t/60) + ':' + ('0'+(t%60)).slice(-2));
+      var ts = paused ? 'PAUSED' : fmtTime(t);
 
       drawButton(cl.finish,  'FINISH', FG,    false);
       drawButton(cl.newBtn,  'NEW',    FG,    false);
@@ -701,9 +743,10 @@
       drawButton(cl.undoBtn, 'UNDO',   undoStack.length ? MUTED : DIM, false);
       drawButton(cl.hintBtn, 'HINT',   FG,    false);
       drawButton(cl.erase,   'ERASE',  MUTED, false);
-      var notesOn = fillMode === 'notes';
-      drawButton(cl.modeBtn, notesOn ? 'NOTES' : 'FILL', notesOn ? AMBER : FG, notesOn);
-      drawButton(cl.autoBtn, 'AUTO',   autoFill ? FG : DIM, autoFill);
+      var fillOn = fillMode === 'fill', notesOn = fillMode === 'notes';
+      drawButton(cl.fillBtn,  'FILL',   fillOn  ? AMBER : FG, fillOn);
+      drawButton(cl.notesBtn, 'NOTES',  notesOn ? AMBER : FG, notesOn);
+      drawButton(cl.contBtn,  'C.FILL', contFill ? FG : DIM, contFill);
 
       var k, nb, active, done;
       for (k = 0; k < cl.numPad.length; k++) {
@@ -747,19 +790,35 @@
 
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillStyle = FG; ctx.shadowColor = FG; ctx.shadowBlur = unit*0.035;
-      ctx.font = 'bold ' + (unit*0.11).toFixed(0) + 'px "Courier New",monospace';
-      ctx.fillText('SOLVED', cx, cy - unit*0.065);
+      ctx.font = 'bold ' + (unit*0.10).toFixed(0) + 'px "Courier New",monospace';
+      ctx.fillText('SOLVED', cx, cy - unit*0.115);
       ctx.shadowBlur = 0;
 
-      var t = finalTime;
-      var ts = Math.floor(t/60) + ':' + ('0'+(t%60)).slice(-2);
       ctx.fillStyle = INK;
-      ctx.font = 'bold ' + (unit*0.035).toFixed(0) + 'px "Courier New",monospace';
-      ctx.fillText('TIME  ' + ts, cx, cy + unit*0.015);
+      ctx.font = 'bold ' + (unit*0.032).toFixed(0) + 'px "Courier New",monospace';
+      ctx.fillText('TIME  ' + fmtTime(finalTime), cx, cy - unit*0.045);
 
+      if (winStats) {
+        ctx.fillStyle = winStats.isNewBest ? AMBER : MUTED;
+        ctx.font = 'bold ' + (unit*0.030).toFixed(0) + 'px "Courier New",monospace';
+        ctx.fillText(
+          (winStats.isNewBest ? 'NEW BEST  ' : 'BEST  ') + fmtTime(winStats.best),
+          cx, cy + unit*0.01
+        );
+
+        ctx.fillStyle = MUTED;
+        ctx.font = (unit*0.024).toFixed(0) + 'px "Courier New",monospace';
+        ctx.fillText(
+          winStats.priorCount ? ('FASTER THAN ' + winStats.percentile + '% OF YOUR ROUNDS')
+                               : 'FIRST CLEAR AT THIS LEVEL',
+          cx, cy + unit*0.055
+        );
+      }
+
+      ctx.fillStyle = FG;
       ctx.globalAlpha = pulse;
-      ctx.font = 'bold ' + (unit*0.038).toFixed(0) + 'px "Courier New",monospace';
-      ctx.fillText('TAP TO PLAY AGAIN', cx, cy + unit*0.085);
+      ctx.font = 'bold ' + (unit*0.036).toFixed(0) + 'px "Courier New",monospace';
+      ctx.fillText('TAP TO PLAY AGAIN', cx, cy + unit*0.11);
       ctx.globalAlpha = 1;
     }
 
