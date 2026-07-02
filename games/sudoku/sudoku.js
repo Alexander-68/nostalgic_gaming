@@ -31,15 +31,18 @@
 (function () {
   'use strict';
 
-  // ---- palette (matches the catalogue's phosphor look) ----------------------
-  var FG    = '#4dff88';   // phosphor green — primary
-  var DIM   = '#1d5e38';   // board grid lines / ambient
-  var INK   = '#d6f7e4';   // neutral text (given digits)
-  var MUTED = '#6b7a72';   // secondary / readouts
-  var ERR   = '#ff5d6c';   // conflict red
-  var AMBER = '#ffcf4d';   // notes-mode accent / pause
-  var HINT_COL = '#4dc8ff'; // hint-revealed digit colour
-  var PANEL = '#0a1410';   // board backing
+  // ---- palette --------------------------------------------------------------
+  // The shared chrome colours come straight from the in-game UI kit
+  // (NG.ui.colors) so this game can't drift from the rest of the catalogue.
+  var C     = NG.ui.colors;
+  var FG    = C.fg;        // phosphor green — primary
+  var DIM   = C.dim;       // board grid lines / ambient
+  var INK   = C.ink;       // neutral text (given digits)
+  var MUTED = C.muted;     // secondary / readouts
+  var ERR   = C.err;       // conflict red
+  var AMBER = C.amber;     // notes-mode accent / pause
+  var HINT_COL = '#4dc8ff'; // hint-revealed digit colour (game-specific)
+  var PANEL = '#0a1410';   // board backing (game-specific)
 
   var DIFFS = [
     { key: 'EASY', givens: 46 },
@@ -719,27 +722,11 @@
     NG.onExit(goFinish);
 
     // ---- drawing helpers -----------------------------------------------------
-    function rrect(px, py, w, h, rad) {
-      rad = Math.min(rad, w/2, h/2);
-      ctx.beginPath();
-      ctx.moveTo(px+rad, py);
-      ctx.arcTo(px+w, py,   px+w, py+h, rad);
-      ctx.arcTo(px+w, py+h, px,   py+h, rad);
-      ctx.arcTo(px,   py+h, px,   py,   rad);
-      ctx.arcTo(px,   py,   px+w, py,   rad);
-      ctx.closePath();
-    }
-
+    // Buttons come from the shared kit; `col` is the accent and `active` maps to
+    // the kit's armed state (brighter border + bloom). Passing DIM as the accent
+    // reproduces the old disabled look, so callers stay unchanged.
     function drawButton(b, label, col, active) {
-      ctx.lineWidth   = active ? 2.5 : 1.5;
-      ctx.strokeStyle = col;
-      ctx.fillStyle   = active ? 'rgba(77,255,136,0.12)' : 'rgba(0,0,0,0.4)';
-      rrect(b.x, b.y, b.w, b.h, Math.min(b.w, b.h)*0.24);
-      ctx.fill(); ctx.stroke();
-      ctx.fillStyle = col;
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.font = 'bold ' + Math.min(b.h*0.44, b.w*0.28).toFixed(0) + 'px "Courier New",monospace';
-      ctx.fillText(label, b.x+b.w/2, b.y+b.h*0.54);
+      NG.ui.button(ctx, b, label, { state: active ? 'active' : 'normal', color: col });
     }
 
     // ---- board ---------------------------------------------------------------
@@ -851,7 +838,7 @@
         ctx.lineWidth   = done ? 0.5 : (active ? 2 : 1);
         ctx.strokeStyle = done ? '#2a2a2a' : (active ? FG : DIM);
         ctx.fillStyle   = done ? 'rgba(0,0,0,0.2)' : (active ? 'rgba(77,255,136,0.12)' : 'rgba(0,0,0,0.35)');
-        rrect(nb.x, nb.y, nb.s, nb.s, nb.s*0.18);
+        NG.ui.rrect(ctx, nb.x, nb.y, nb.s, nb.s, nb.s*0.18);
         ctx.fill(); ctx.stroke();
         ctx.globalAlpha = done ? 0.22 : 1;
         ctx.fillStyle   = active ? FG : INK;
@@ -863,58 +850,46 @@
     }
 
     function drawPaused() {
-      ctx.fillStyle = 'rgba(0,0,0,0.75)';
-      ctx.fillRect(boardLeft, boardTop, S, S);
-      var unit = Math.min(vw, vh);
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillStyle = AMBER; ctx.shadowColor = AMBER; ctx.shadowBlur = unit*0.03;
-      ctx.font = 'bold ' + (unit*0.09).toFixed(0) + 'px "Courier New",monospace';
-      ctx.fillText('PAUSED', boardLeft + S/2, boardTop + S/2);
-      ctx.shadowBlur = 0;
-      ctx.fillStyle = MUTED;
-      ctx.font = (unit*0.032).toFixed(0) + 'px "Courier New",monospace';
-      ctx.fillText('TAP TIMER TO RESUME', boardLeft + S/2, boardTop + S/2 + unit*0.075);
+      NG.ui.overlay(ctx, { x: boardLeft, y: boardTop, w: S, h: S }, {
+        title: 'PAUSED', tone: 'pause',
+        detail: 'TAP THE TIMER TO RESUME',
+        t: clock
+      });
     }
 
+    // Composed from NG.ui primitives (not NG.ui.overlay) because the win screen
+    // carries three stat lines — time, best, percentile — where the shared modal
+    // only stacks two; it still gains the kit's reticle frame, bloom title and
+    // blinking-cursor prompt.
     function drawWon() {
-      ctx.fillStyle = 'rgba(0,0,0,0.62)';
-      ctx.fillRect(boardLeft, boardTop, S, S);
       var unit = Math.min(vw, vh);
       var cx = boardLeft + S/2, cy = boardTop + S/2;
-      var pulse = 0.65 + 0.35*Math.abs(Math.sin(clock*2.2));
 
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillStyle = FG; ctx.shadowColor = FG; ctx.shadowBlur = unit*0.035;
-      ctx.font = 'bold ' + (unit*0.10).toFixed(0) + 'px "Courier New",monospace';
-      ctx.fillText('SOLVED', cx, cy - unit*0.115);
-      ctx.shadowBlur = 0;
+      NG.ui.scrim(ctx, boardLeft, boardTop, S, S);
+      var boxW = Math.min(S*0.86, unit*1.9), boxH = Math.min(S*0.66, unit*0.92);
+      NG.ui.brackets(ctx, cx - boxW/2, cy - boxH/2, boxW, boxH, {
+        len: unit*0.07, lw: Math.max(2, unit*0.007), color: FG, glow: unit*0.02
+      });
 
-      ctx.fillStyle = INK;
-      ctx.font = 'bold ' + (unit*0.032).toFixed(0) + 'px "Courier New",monospace';
-      ctx.fillText('TIME  ' + fmtTime(finalTime), cx, cy - unit*0.045);
+      NG.ui.text(ctx, 'SOLVED', cx, cy - unit*0.115,
+        { color: FG, size: unit*0.10, track: 0.08, glow: unit*0.05 });
+      NG.ui.text(ctx, 'TIME  ' + fmtTime(finalTime), cx, cy - unit*0.045,
+        { color: INK, size: unit*0.032, track: 0.04 });
 
       if (winStats) {
-        ctx.fillStyle = winStats.isNewBest ? AMBER : MUTED;
-        ctx.font = 'bold ' + (unit*0.030).toFixed(0) + 'px "Courier New",monospace';
-        ctx.fillText(
+        NG.ui.text(ctx,
           (winStats.isNewBest ? 'NEW BEST  ' : 'BEST  ') + fmtTime(winStats.best),
-          cx, cy + unit*0.01
-        );
-
-        ctx.fillStyle = MUTED;
-        ctx.font = (unit*0.024).toFixed(0) + 'px "Courier New",monospace';
-        ctx.fillText(
+          cx, cy + unit*0.01,
+          { color: winStats.isNewBest ? AMBER : MUTED, size: unit*0.030, track: 0.05 });
+        NG.ui.text(ctx,
           winStats.priorCount ? ('FASTER THAN ' + winStats.percentile + '% OF YOUR ROUNDS')
                                : 'FIRST CLEAR AT THIS LEVEL',
-          cx, cy + unit*0.055
-        );
+          cx, cy + unit*0.055,
+          { color: MUTED, size: unit*0.024, bold: false, track: 0.03 });
       }
 
-      ctx.fillStyle = FG;
-      ctx.globalAlpha = pulse;
-      ctx.font = 'bold ' + (unit*0.036).toFixed(0) + 'px "Courier New",monospace';
-      ctx.fillText('TAP TO PLAY AGAIN', cx, cy + unit*0.11);
-      ctx.globalAlpha = 1;
+      NG.ui.prompt(ctx, cx, cy + unit*0.11, 'TAP TO PLAY AGAIN',
+        { t: clock, size: unit*0.036, color: FG });
     }
 
     // ---- frame ---------------------------------------------------------------
