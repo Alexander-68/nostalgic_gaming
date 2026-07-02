@@ -148,14 +148,17 @@
   // GAME — state, layout, input and rendering. Browser only.
   // ===========================================================================
 
-  // ---- palette (matches the catalogue's phosphor look) ----------------------
-  var FG = '#4dff88';     // phosphor green — primary
-  var DIM = '#1d5e38';    // borders / ambient
-  var INK = '#d6f7e4';    // neutral text
-  var MUTED = '#6b7a72';  // secondary text
-  var FLAG = '#ff5d6c';   // flag red
-  var AMBER = '#ffcf4d';  // "new best" accent
-  var PANEL = '#0a1410';  // field backing
+  // ---- palette --------------------------------------------------------------
+  // Shared chrome colours come from the in-game UI kit (NG.ui.colors) so this
+  // game stays in lockstep with the rest of the catalogue.
+  var C = NG.ui.colors;
+  var FG = C.fg;          // phosphor green — primary
+  var DIM = C.dim;        // borders / ambient
+  var INK = C.ink;        // neutral text
+  var MUTED = C.muted;    // secondary text
+  var FLAG = C.err;       // flag red
+  var AMBER = C.amber;    // "new best" accent
+  var PANEL = '#0a1410';  // field backing (game-specific)
   var RAISED = '#22633c'; // unrevealed cell face (kept bright so it reads clearly)
   var RAISED_PRESS = '#2e7d4d'; // unrevealed cell while held under a finger
   var SUNK = '#08120b';   // revealed cell face
@@ -252,26 +255,36 @@
     function chromeLayout() {
       var unit = Math.min(vw, vh);
       if (panelMode === 'wide') {
-        var lw = boardLeft, rw = vw - (boardLeft + S);
-        var cxL = lw / 2, cxR = boardLeft + S + rw / 2;
-        var gap = clamp(unit * 0.028, 8, 22);
-        var bw = clamp(Math.min(lw, rw) * 0.78, 76, 210);
+        // A single LEFT control column (like Sudoku): FINISH, NEW, the mine +
+        // timer readouts, the big DIG/FLAG toggle, the difficulty chip and the
+        // help text — all stacked and centred vertically beside the field. The
+        // board stays centred, so the right margin is quiet breathing room.
+        var lw = boardLeft;
+        var cxL = lw / 2;
+        var colW = clamp(lw * 0.84, 70, 240);
+        var x0 = cxL - colW / 2;
+        var g = clamp(unit * 0.022, 7, 18);
         var bh = clamp(unit * 0.06, 30, 50);
-        var lx = cxL - bw / 2, rx = cxR - bw / 2;
+        var th = clamp(unit * 0.15, 66, 140);       // the DIG/FLAG toggle
+        var helpLH = clamp(unit * 0.021, 9, 14) * 1.5;
+        var helpH = 3 * helpLH;
+        // Readouts stack (icon + value doesn't fit two-up in a narrow 9:8 column)
+        // at a moderate centred width so they read at every ratio.
+        var rw2 = Math.min(colW, clamp(unit * 0.17, 96, 170));
 
-        // LEFT panel, top-down: FINISH, mine readout, timer readout, difficulty.
-        var finish = { x: lx, y: boardTop + gap, w: bw, h: bh };
-        var mines = { x: lx, y: finish.y + bh + gap * 1.4, w: bw, h: bh };
-        var timer = { x: lx, y: mines.y + bh + gap, w: bw, h: bh };
-        var diff = { x: lx, y: timer.y + bh + gap, w: bw, h: bh };
+        var totalH = 5 * bh + th + helpH + 6 * g;    // FINISH,NEW,MINES,TIMER,toggle,DIFF,HELP
+        var y0 = boardTop + Math.max(g, (S - totalH) / 2);
 
-        // RIGHT panel: big mode toggle centred, NEW above it, help below.
-        var tw = clamp(Math.min(rw * 0.84, unit * 0.42), 96, 250);
-        var th = clamp(unit * 0.17, 74, 156);
-        var modeR = { x: cxR - tw / 2, y: boardTop + S * 0.5 - th / 2, w: tw, h: th };
-        var newBtn = { x: rx, y: modeR.y - bh - gap * 1.4, w: bw, h: bh };
-        var help = { x: cxR, y: boardTop + S - gap, align: 'center', baseline: 'bottom' };
-        return { mode: 'wide', finish: finish, newBtn: newBtn, toggle: modeR, diff: diff, mines: mines, timer: timer, help: help };
+        var finish = { x: x0, y: y0, w: colW, h: bh };
+        var newBtn = { x: x0, y: y0 + (bh + g), w: colW, h: bh };
+        var mines = { x: cxL - rw2 / 2, y: y0 + 2 * (bh + g), w: rw2, h: bh };
+        var timer = { x: cxL - rw2 / 2, y: y0 + 3 * (bh + g), w: rw2, h: bh };
+        var ty = y0 + 4 * (bh + g);
+        var toggle = { x: x0, y: ty, w: colW, h: th };
+        var dy = ty + th + g;
+        var diff = { x: x0, y: dy, w: colW, h: bh };
+        var help = { x: cxL, y: dy + bh + g, w: colW, align: 'center', baseline: 'top' };
+        return { mode: 'wide', finish: finish, newBtn: newBtn, toggle: toggle, diff: diff, mines: mines, timer: timer, help: help };
       }
 
       // stacked: top band carries FINISH | mines · timer | NEW; bottom band the
@@ -299,7 +312,7 @@
       if (diffS.x + diffS.w > toggleS.x) {            // narrow screen: tuck the chip under the toggle
         diffS = { x: vw / 2 - dchipW / 2, y: toggleS.y + th2 + gapS * 0.6, w: dchipW, h: dchipH };
       }
-      var helpS = { x: vw / 2, y: vh - gapS, align: 'center', baseline: 'bottom' };
+      var helpS = { x: vw / 2, y: vh - gapS, w: vw - 2 * mgx, align: 'center', baseline: 'bottom' };
       return { mode: 'stacked', finish: finishS, newBtn: newS, toggle: toggleS, diff: diffS, mines: minesS, timer: timerS, help: helpS };
     }
 
@@ -460,16 +473,9 @@
     NG.onExit(finishToCatalogue);
 
     // ---- drawing helpers ---------------------------------------------------
-    function rrect(px, py, w, h, rad) {
-      rad = Math.min(rad, w / 2, h / 2);
-      ctx.beginPath();
-      ctx.moveTo(px + rad, py);
-      ctx.arcTo(px + w, py, px + w, py + h, rad);
-      ctx.arcTo(px + w, py + h, px, py + h, rad);
-      ctx.arcTo(px, py + h, px, py, rad);
-      ctx.arcTo(px, py, px + w, py, rad);
-      ctx.closePath();
-    }
+    // Rounded-rect geometry comes from the shared kit; kept as a thin local
+    // alias so the many game-specific cell/panel draws below read unchanged.
+    function rrect(px, py, w, h, rad) { NG.ui.rrect(ctx, px, py, w, h, rad); }
     function pop(rt) {                                  // easeOutQuad pop since reveal
       var age = (clock - rt) / 0.12, p = age >= 1 ? 1 : age < 0 ? 0 : age;
       return 1 - (1 - p) * (1 - p);
@@ -576,17 +582,10 @@
     }
 
     // ---- chrome ------------------------------------------------------------
+    // Buttons come from the shared kit (NG.ui.button); the DIG/FLAG toggle,
+    // readouts and difficulty chip stay bespoke below.
     function drawButton(b, label, accent, active) {
-      var col = accent || FG;
-      ctx.lineWidth = active ? 3 : 1.5;
-      ctx.strokeStyle = col;
-      ctx.fillStyle = active ? 'rgba(77,255,136,0.1)' : 'rgba(0,0,0,0.4)';
-      rrect(b.x, b.y, b.w, b.h, Math.min(b.w, b.h) * 0.26);
-      ctx.fill(); ctx.stroke();
-      ctx.fillStyle = col;
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.font = 'bold ' + Math.min(b.h * 0.42, b.w * 0.3).toFixed(0) + 'px "Courier New", monospace';
-      ctx.fillText(label, b.x + b.w / 2, b.y + b.h * 0.54);
+      NG.ui.button(ctx, b, label, { state: active ? 'active' : 'normal', color: accent || FG });
     }
 
     // The big DIG / FLAG toggle: the active half is lit; tap to flip.
@@ -687,12 +686,22 @@
       var lines = mode === 'dig'
         ? ['TAP TO DIG', 'HOLD TO FLAG', 'TAP A NUMBER TO SWEEP']
         : ['TAP TO FLAG', 'SWITCH TO DIG', 'TO REVEAL CELLS'];
-      var fs = clamp(Math.min(vw, vh) * 0.021, 9, 14), lh = fs * 1.5, i;
+      var fs = clamp(Math.min(vw, vh) * 0.021, 9, 14), i, maxLen = 0;
+      // Shrink to fit the anchor's width so the longest line never overruns a
+      // narrow left column (monospace ≈ 0.6em per glyph).
+      if (h.w) {
+        for (i = 0; i < lines.length; i++) maxLen = Math.max(maxLen, lines[i].length);
+        fs = Math.min(fs, (h.w * 0.96) / (maxLen * 0.6));
+      }
+      var lh = fs * 1.5;
       ctx.fillStyle = MUTED; ctx.globalAlpha = 0.8;
       ctx.font = 'bold ' + fs.toFixed(0) + 'px "Courier New", monospace';
       ctx.textAlign = h.align; ctx.textBaseline = h.baseline;
+      // Left column anchors from the top (draw downward); the portrait band
+      // anchors from the bottom (draw upward).
       for (i = 0; i < lines.length; i++) {
-        ctx.fillText(lines[lines.length - 1 - i], h.x, h.y - i * lh);
+        if (h.baseline === 'top') ctx.fillText(lines[i], h.x, h.y + i * lh);
+        else ctx.fillText(lines[lines.length - 1 - i], h.x, h.y - i * lh);
       }
       ctx.globalAlpha = 1;
     }
@@ -708,33 +717,35 @@
     }
 
     // ---- win / lose banner -------------------------------------------------
+    // Composed from NG.ui primitives (not NG.ui.overlay) so the win case can keep
+    // its TIME + BEST lines; both cases gain the kit's reticle frame, bloom title
+    // and blinking-cursor prompt. Rounded scrim matches the field's corners.
     function drawOver() {
-      ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      rrect(boardLeft, boardTop, S, S, cs * 0.25); ctx.fill();
       var unit = Math.min(vw, vh), cx = boardLeft + S / 2, cy = boardTop + S / 2;
       var won = state === 'won';
       var col = won ? FG : FLAG;
-      var pulse = 0.6 + 0.4 * Math.abs(Math.sin(clock * 2.4));
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillStyle = col; ctx.shadowColor = col; ctx.shadowBlur = unit * 0.03;
-      ctx.font = 'bold ' + (unit * 0.11).toFixed(0) + 'px "Courier New", monospace';
-      ctx.fillText(won ? 'CLEARED' : 'BOOM', cx, cy - unit * 0.05);
-      ctx.shadowBlur = 0;
-      ctx.fillStyle = INK;
-      ctx.font = 'bold ' + (unit * 0.035).toFixed(0) + 'px "Courier New", monospace';
-      ctx.fillText(won ? 'TIME ' + pad3(finalTime) + 'S' : 'YOU HIT A MINE', cx, cy + unit * 0.02);
+
+      ctx.save();
+      ctx.fillStyle = NG.ui.colors.scrim;
+      rrect(boardLeft, boardTop, S, S, cs * 0.25); ctx.fill();
+      ctx.restore();
+
+      var boxW = Math.min(S * 0.86, unit * 1.9), boxH = Math.min(S * 0.66, unit * 0.92);
+      NG.ui.brackets(ctx, cx - boxW / 2, cy - boxH / 2, boxW, boxH, {
+        len: unit * 0.07, lw: Math.max(2, unit * 0.007), color: col, glow: unit * 0.02
+      });
+
+      NG.ui.text(ctx, won ? 'CLEARED' : 'BOOM', cx, cy - unit * 0.05,
+        { color: col, size: unit * 0.11, track: 0.08, glow: unit * 0.05, glowColor: col });
+      NG.ui.text(ctx, won ? 'TIME ' + pad3(finalTime) + 'S' : 'YOU HIT A MINE', cx, cy + unit * 0.02,
+        { color: INK, size: unit * 0.035, track: 0.04 });
       if (won && winStats) {
-        ctx.fillStyle = winStats.isNew ? AMBER : MUTED;
-        ctx.font = 'bold ' + (unit * 0.03).toFixed(0) + 'px "Courier New", monospace';
-        ctx.fillText(
-          (winStats.isNew ? 'NEW BEST  ' : 'BEST  ') + pad3(winStats.best) + 'S',
-          cx, cy + unit * 0.055
-        );
+        NG.ui.text(ctx, (winStats.isNew ? 'NEW BEST  ' : 'BEST  ') + pad3(winStats.best) + 'S',
+          cx, cy + unit * 0.055,
+          { color: winStats.isNew ? AMBER : MUTED, size: unit * 0.03, track: 0.05 });
       }
-      ctx.globalAlpha = pulse; ctx.fillStyle = INK;
-      ctx.font = 'bold ' + (unit * 0.04).toFixed(0) + 'px "Courier New", monospace';
-      ctx.fillText('TAP TO PLAY AGAIN', cx, cy + (won && winStats ? unit * 0.115 : unit * 0.085));
-      ctx.globalAlpha = 1;
+      NG.ui.prompt(ctx, cx, cy + (won && winStats ? unit * 0.115 : unit * 0.085),
+        'TAP TO PLAY AGAIN', { t: clock, size: unit * 0.04, color: FG });
     }
 
     // ---- frame -------------------------------------------------------------
